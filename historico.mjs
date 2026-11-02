@@ -34,10 +34,17 @@ const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 // o dólar vem da AwesomeAPI (grátis, sem chave): o plano grátis da brapi não tem moedas
 async function dolar() {
   try {
-    const r = await fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL');
+    const r = await fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL', { headers: { 'user-agent': 'Mozilla/5.0 (InfoBolsa dados)' } });
+    if (!r.ok) throw new Error(String(r.status));
     const d = (await r.json()).USDBRL;
     return [Number(d.bid), Math.round(Number(d.pctChange || 0) * 100) / 100];
-  } catch { console.log('dólar: falhou'); return null; }
+  } catch (e) {
+    console.log(`dólar AwesomeAPI: ${e.message}`);
+  }
+  // reserva: o dólar como "ativo" na brapi
+  const j = await brapi('quote/USDBRL%3DX');
+  const x = j?.results?.[0];
+  return x ? [x.regularMarketPrice, Math.round((x.regularMarketChangePercent || 0) * 100) / 100] : null;
 }
 const indice = (j) => { const x = j?.results?.[0]; return x ? [x.regularMarketPrice, Math.round((x.regularMarketChangePercent || 0) * 100) / 100] : null; };
 const [ib, ifx, us] = await Promise.all([brapi('quote/%5EBVSP'), brapi('quote/IFIX'), dolar()]);
