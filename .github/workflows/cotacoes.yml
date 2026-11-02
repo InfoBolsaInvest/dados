@@ -1,0 +1,54 @@
+# Cotações da B3 a cada 15 minutos no pregão (10h às 18h45 de Brasília, de segunda a sexta).
+# Publica os arquivos no GitHub Pages; se a busca falhar, o site continua com os dados anteriores.
+name: cotacoes
+
+on:
+  schedule:
+    - cron: '*/15 13-21 * * 1-5' # horário UTC (Brasília + 3h)
+    - cron: '0 12 1 * *' # todo dia 1: mantém o agendamento ativo (o GitHub pausa repositórios parados há 60 dias)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: cotacoes
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Buscar cotações
+        run: node atualizar.mjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Publicar
+        uses: actions/deploy-pages@v4
+      - name: Manter o agendamento ativo
+        if: github.event.schedule == '0 12 1 * *'
+        run: |
+          git config user.name "InfoBolsa"
+          git config user.email "contato@infobolsainvestimentos.com"
+          git commit --allow-empty -m "Mantém o agendamento ativo"
+          git push
+      - name: Avisar no Telegram se falhar
+        if: failure()
+        env:
+          TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$CHAT" ]; then
+            curl -s -X POST "https://api.telegram.org/bot$TOKEN/sendMessage" \
+              -d chat_id="$CHAT" -d text="InfoBolsa app: as cotações não atualizaram (${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          fi
