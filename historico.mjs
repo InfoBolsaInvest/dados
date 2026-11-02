@@ -64,7 +64,7 @@ if (!forcar && (jaFeito || minutosBR < 18 * 60 + 30)) { console.log('ok: Ibovesp
 
 const cat = JSON.parse(readFileSync('site/catalogo.json', 'utf8')).a;
 const porVolume = Object.keys(cat).sort((a, b) => cat[b][4] - cat[a][4]);
-const lista = [...new Set(['^BVSP', ...SEMPRE.filter((t) => cat[t]), ...porVolume])].slice(0, QUANTOS + 1);
+const lista = [...new Set(['^BVSP', 'IFIX', ...SEMPRE.filter((t) => cat[t]), ...porVolume])].slice(0, QUANTOS + 2);
 
 let feitos = 0;
 for (const tk of lista) {

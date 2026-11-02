@@ -35,7 +35,9 @@ jobs:
       - name: Trazer o histórico guardado
         uses: actions/cache/restore@v4
         with:
-          path: site/historico
+          path: |
+            site/historico
+            site/longo
           key: historico-${{ github.run_id }}
           restore-keys: historico-
       - name: Buscar cotações
@@ -47,11 +49,19 @@ jobs:
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
           HISTORICO: ${{ github.event.inputs.historico }}
         run: node historico.mjs
+      - name: Dólar, bolsas de fora e 5 anos (Yahoo)
+        id: yahoo
+        continue-on-error: true
+        env:
+          HISTORICO: ${{ github.event.inputs.historico }}
+        run: node yahoo.mjs
       - name: Guardar o histórico novo
         if: hashFiles('.historico-novo') != ''
         uses: actions/cache/save@v4
         with:
-          path: site/historico
+          path: |
+            site/historico
+            site/longo
           key: historico-${{ github.run_id }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
@@ -67,7 +77,7 @@ jobs:
           git commit --allow-empty -m "Mantém o agendamento ativo"
           git push
       - name: Avisar no Telegram se falhar
-        if: failure() || steps.hist.outcome == 'failure'
+        if: failure() || steps.hist.outcome == 'failure' || steps.yahoo.outcome == 'failure'
         env:
           TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT: ${{ secrets.TELEGRAM_CHAT }}
