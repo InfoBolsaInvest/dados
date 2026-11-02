@@ -7,6 +7,11 @@ on:
     - cron: '*/15 13-21 * * 1-5' # horário UTC (Brasília + 3h)
     - cron: '0 12 1 * *' # todo dia 1: mantém o agendamento ativo (o GitHub pausa repositórios parados há 60 dias)
   workflow_dispatch:
+    inputs:
+      historico:
+        description: 'Buscar o histórico agora (1 = sim)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -27,8 +32,25 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Trazer o histórico guardado
+        uses: actions/cache/restore@v4
+        with:
+          path: site/historico
+          key: historico-${{ github.run_id }}
+          restore-keys: historico-
       - name: Buscar cotações
         run: node atualizar.mjs
+      - name: Ibovespa, dólar e histórico
+        env:
+          BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
+          HISTORICO: ${{ github.event.inputs.historico }}
+        run: node historico.mjs
+      - name: Guardar o histórico novo
+        if: hashFiles('.historico-novo') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: site/historico
+          key: historico-${{ github.run_id }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
