@@ -3,7 +3,7 @@
 //   site/catalogo.json  { versao, a: { TICKER: [nome, tipo, segmento, temLogo, volume] } }
 import { mkdirSync, writeFileSync } from 'node:fs';
 
-const MINIMO_ATIVOS = 1500; // abaixo disso a resposta veio incompleta: falha e o site continua com os dados anteriores
+const MINIMO_ATIVOS = 1300; // abaixo disso a resposta veio incompleta: falha e o site continua com os dados anteriores
 const FUSO = 'America/Sao_Paulo';
 
 async function buscarLista() {
@@ -96,7 +96,8 @@ function segmentoDe(it, tipo) {
 }
 
 // ---------- geração ----------
-const lista = (await buscarLista()).filter((it) => it.stock && typeof it.close === 'number' && it.close > 0);
+// tickers do mercado fracionário (PETR4F etc.) repetem o ativo normal: ficam de fora
+const lista = (await buscarLista()).filter((it) => it.stock && !/\dF$/.test(it.stock) && typeof it.close === 'number' && it.close > 0);
 if (lista.length < MINIMO_ATIVOS) throw new Error(`a brapi trouxe só ${lista.length} ativos`);
 
 const q = {};
