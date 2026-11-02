@@ -1,5 +1,5 @@
 // Ibovespa, dólar e histórico pro gráfico (precisa do token grátis da brapi em BRAPI_TOKEN).
-//   site/mercado.json          { atualizadoEm, ibov: [pontos, var %], dolar: [preço, var %] }   (toda rodada)
+//   site/mercado.json          { atualizadoEm, ibov, ifix, dolar: [valor, var %] | null }        (toda rodada)
 //   site/historico/TICKER.json [[data, abertura, máxima, mínima, fechamento], ...]               (uma vez por dia)
 // O plano grátis da brapi dá 3 meses de histórico diário e um ativo por consulta: o histórico sai só
 // pros ativos mais negociados, dentro do limite de 15.000 consultas por mês.
@@ -16,28 +16,35 @@ if (!TOKEN) { console.log('sem BRAPI_TOKEN: pulei Ibovespa, dólar e histórico'
 
 async function brapi(caminho) {
   const sep = caminho.includes('?') ? '&' : '?';
+  let status = 0;
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
     const r = await fetch(`https://brapi.dev/api/${caminho}${sep}token=${TOKEN}`);
     if (r.ok) return r.json();
-    if (r.status === 404) return null;
+    status = r.status;
+    if (r.status === 404 || r.status === 400 || r.status === 401 || r.status === 403) break;
     await new Promise((ok) => setTimeout(ok, 4000 * tentativa));
   }
-  throw new Error(`brapi falhou em ${caminho}`);
+  console.log(`brapi ${caminho.split('?')[0]}: ${status}`);
+  return null;
 }
 
 const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
 
-// ---------- Ibovespa e dólar (toda rodada) ----------
-const [ib, us] = await Promise.all([brapi('quote/%5EBVSP'), brapi('v2/currency?currency=USD-BRL')]);
-const i0 = ib?.results?.[0];
-const u0 = us?.currency?.[0];
-if (!i0 || !u0) throw new Error('Ibovespa ou dólar não vieram');
+// ---------- Ibovespa, IFIX e dólar (toda rodada) ----------
+// o dólar vem da AwesomeAPI (grátis, sem chave): o plano grátis da brapi não tem moedas
+async function dolar() {
+  try {
+    const r = await fetch('https://economia.awesomeapi.com.br/json/last/USD-BRL');
+    const d = (await r.json()).USDBRL;
+    return [Number(d.bid), Math.round(Number(d.pctChange || 0) * 100) / 100];
+  } catch { console.log('dólar: falhou'); return null; }
+}
+const indice = (j) => { const x = j?.results?.[0]; return x ? [x.regularMarketPrice, Math.round((x.regularMarketChangePercent || 0) * 100) / 100] : null; };
+const [ib, ifx, us] = await Promise.all([brapi('quote/%5EBVSP'), brapi('quote/IFIX'), dolar()]);
 mkdirSync('site/historico', { recursive: true });
-writeFileSync('site/mercado.json', JSON.stringify({
-  atualizadoEm: new Date().toISOString(),
-  ibov: [i0.regularMarketPrice, Math.round((i0.regularMarketChangePercent || 0) * 100) / 100],
-  dolar: [Number(u0.bidPrice), Math.round(Number(u0.pctChange || 0) * 100) / 100],
-}));
+const mercado = { atualizadoEm: new Date().toISOString(), ibov: indice(ib), ifix: indice(ifx), dolar: us };
+if (!mercado.ibov) throw new Error('o Ibovespa não veio da brapi');
+writeFileSync('site/mercado.json', JSON.stringify(mercado));
 
 // ---------- histórico (uma vez por dia, na primeira rodada depois das 18h30) ----------
 // os arquivos de ontem voltam do cache do GitHub; indice.json diz de que dia eles são

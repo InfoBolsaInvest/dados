@@ -41,6 +41,8 @@ jobs:
       - name: Buscar cotações
         run: node atualizar.mjs
       - name: Ibovespa, dólar e histórico
+        id: hist
+        continue-on-error: true # se falhar, as cotações saem do mesmo jeito
         env:
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
           HISTORICO: ${{ github.event.inputs.historico }}
@@ -65,7 +67,7 @@ jobs:
           git commit --allow-empty -m "Mantém o agendamento ativo"
           git push
       - name: Avisar no Telegram se falhar
-        if: failure()
+        if: failure() || steps.hist.outcome == 'failure'
         env:
           TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           CHAT: ${{ secrets.TELEGRAM_CHAT }}
