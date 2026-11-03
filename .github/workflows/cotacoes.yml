@@ -42,6 +42,10 @@ on:
         type: choice
         options: [nada, teste, falha]
         default: nada
+      investidor10:
+        description: 'Ler agora as carteiras dos clientes no Investidor10 (1 = sim)'
+        required: false
+        default: ''
       relogio:
         description: 'Só para o despertador externo (cron-job.org), que dispara a cada 15 minutos. Deixe em branco.'
         required: false
@@ -156,6 +160,16 @@ jobs:
           RECADO_LINK: ${{ github.event.inputs.recado_link }}
           RECADO_PARA: ${{ github.event.inputs.recado_para }}
         run: node avisos.mjs
+      - name: Carteiras dos clientes no Investidor10 (1x por dia, depois das 18h)
+        id: i10
+        if: steps.google.outcome == 'success'
+        continue-on-error: true
+        env:
+          GOOGLE_TOKEN: ${{ steps.google.outputs.access_token }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+          I10: ${{ github.event.inputs.investidor10 }}
+        run: node investidor10.mjs
       - name: Guardar o histórico novo
         if: hashFiles('.historico-novo') != ''
         uses: actions/cache/save@v4
@@ -188,7 +202,7 @@ jobs:
           TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
           # só o resultado de cada passo (as saídas, como a chave do Google, ficam de fora)
           PASSOS: >-
-            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
+            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
           JOB_STATUS: ${{ job.status }}
           EVENTO: ${{ github.event.inputs.relogio == '1' && 'relogio' || github.event_name }}
           MODO: ${{ github.event.inputs.telegram }}

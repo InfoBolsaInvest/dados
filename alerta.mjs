@@ -29,6 +29,7 @@ const NOMES = {
   google: 'Entrada no Google (avisos no celular)',
   repor: 'Reposição dos arquivos',
   avisos: 'Avisos no celular',
+  i10: 'Carteiras dos clientes (Investidor10)',
   publicar: 'Publicação do site',
 };
 
