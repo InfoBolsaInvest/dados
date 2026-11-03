@@ -165,6 +165,8 @@ jobs:
             site/longo
             site/tesouro
           key: historico-${{ github.run_id }}
+      - name: Páginas fixas (política de privacidade e exclusão de conta)
+        run: cp paginas/*.html site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
