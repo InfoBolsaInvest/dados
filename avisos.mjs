@@ -172,6 +172,12 @@ function avisosDe(u, ja, primeira) {
   return lista;
 }
 
+// contas do dono: lista de uids em config/avisos.donos no Firestore (privado; o app não lê config)
+async function lerDonos() {
+  const r = await fetch(`${FS}/config/avisos`, { headers: H });
+  return new Set(r.ok ? valor({ mapValue: { fields: (await r.json()).fields || {} } }).donos || [] : []);
+}
+
 // ---------- roda ----------
 // o mesmo celular em duas contas (alguém saiu sem apagar o registro): vale só a conta registrada por último
 const todas = (await contas()).filter((u) => u.push?.token);
@@ -193,9 +199,7 @@ if (process.env.TESTE === '1') {
 // O mesmo recado não vai duas vezes pra mesma pessoa.
 const recado = { titulo: (process.env.RECADO_TITULO || '').trim(), texto: (process.env.RECADO_TEXTO || '').trim(), link: (process.env.RECADO_LINK || '').trim(), para: process.env.RECADO_PARA || 'teste' };
 if (recado.titulo && recado.texto) {
-  // contas do dono pro teste: lista de uids em config/avisos.donos no Firestore (privado; o app não lê config)
-  const r0 = await fetch(`${FS}/config/avisos`, { headers: H });
-  const donos = new Set(r0.ok ? valor({ mapValue: { fields: (await r0.json()).fields || {} } }).donos || [] : []);
+  const donos = await lerDonos();
   const alvo = todas.filter((u) => (recado.para === 'todos' ? u.notif?.novidades !== false : donos.has(u.uid)));
   const chave = `recado:${(recado.titulo + recado.texto).toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 60)}`;
   const dados = recado.link && /^https:\/\//.test(recado.link) ? { url: recado.link } : { tela: 'hoje' };
@@ -212,6 +216,29 @@ if (recado.titulo && recado.texto) {
   console.log(`ok: recado (${recado.para}) mandado para ${ok} de ${alvo.length} celular(es)${ja ? `, ${ja} já tinham recebido` : ''}`);
   process.exit(0);
 }
+// problemas e sugestões mandados pelo app (coleção sugestoes): avisa o dono e marca como avisado
+const TIPO_SUG = { problema: 'Problema relatado', sugestao: 'Sugestão nova', outro: 'Mensagem nova' };
+try {
+  const r = await fetch(`${FS}:runQuery`, {
+    method: 'POST', headers: H,
+    body: JSON.stringify({ structuredQuery: { from: [{ collectionId: 'sugestoes' }], where: { fieldFilter: { field: { fieldPath: 'avisado' }, op: 'EQUAL', value: { booleanValue: false } } }, limit: 30 } }),
+  });
+  if (!r.ok) throw new Error(`Firestore sugestoes: ${r.status} ${await r.text()}`);
+  const novas = (await r.json()).filter((x) => x.document).map((x) => ({ nome: x.document.name, ...valor({ mapValue: { fields: x.document.fields || {} } }) }));
+  if (novas.length) {
+    const donos = await lerDonos();
+    const celulares = todas.filter((u) => donos.has(u.uid));
+    const lista = novas.length > 3
+      ? [{ titulo: `${novas.length} mensagens novas no app`, texto: novas.map((n) => `${TIPO_SUG[n.tipo] || 'Mensagem'}: ${n.texto.slice(0, 60)}`).join('\n') }]
+      : novas.map((n) => ({ titulo: `${TIPO_SUG[n.tipo] || 'Mensagem nova'} no app`, texto: `${n.texto.slice(0, 400)}${n.responder && n.email ? '\n(pediu resposta por e-mail)' : ''}` }));
+    let ok = 0;
+    for (const u of celulares) for (const m of lista) if ((await mandar(u.push.token, m.titulo, m.texto, { tela: 'perfil' })) === 'ok') ok++;
+    // sem celular do dono registrado, deixa pra próxima rodada
+    if (ok) for (const n of novas) await fetch(`https://firestore.googleapis.com/v1/${n.nome}?updateMask.fieldPaths=avisado`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { avisado: { booleanValue: true } } }) });
+    console.log(`ok: ${novas.length} sugestão(ões) nova(s), ${ok} aviso(s) pro dono`);
+  }
+} catch (e) { console.log(`sugestões: ${e.message}`); }
+
 const donoDoToken = new Map();
 for (const u of todas) {
   const atual = donoDoToken.get(u.push.token);
