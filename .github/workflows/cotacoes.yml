@@ -42,6 +42,9 @@ jobs:
           restore-keys: historico-
       - name: Buscar cotações
         run: node atualizar.mjs
+      - name: Conferir com o arquivo oficial da B3
+        continue-on-error: true # se a B3 estiver fora, fica só o que a brapi trouxe
+        run: node b3.mjs
       - name: Ibovespa, dólar e histórico
         id: hist
         continue-on-error: true # se falhar, as cotações saem do mesmo jeito
