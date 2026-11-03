@@ -75,11 +75,25 @@ jobs:
       - name: Notícias
         continue-on-error: true
         run: node noticias.mjs
+      - name: Entrar no Google sem chave (Workload Identity Federation)
+        id: google
+        continue-on-error: true
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/190730635858/locations/global/workloadIdentityPools/github/providers/github
+          service_account: avisos-robo@infobolsa-investimentos.iam.gserviceaccount.com
+          token_format: access_token
       - name: Repor o que falhou com a versão publicada
         run: |
           for f in fundamentos isin calendario videos noticias; do
             [ -f "site/$f.json" ] || curl -sf "https://infobolsainvest.github.io/dados/$f.json" -o "site/$f.json" || echo "sem $f.json"
           done
+      - name: Avisos no celular
+        if: steps.google.outcome == 'success'
+        continue-on-error: true
+        env:
+          GOOGLE_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node avisos.mjs
       - name: Guardar o histórico novo
         if: hashFiles('.historico-novo') != ''
         uses: actions/cache/save@v4

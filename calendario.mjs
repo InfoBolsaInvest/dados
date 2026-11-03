@@ -11,7 +11,7 @@ const COPOM = [
 ];
 // dias sem pregão na B3 (feriados nacionais e os fechamentos de fim de ano)
 const FERIADOS = [
-  ['2026-11-20', 'Dia da Consciência Negra'], ['2026-12-24', 'Véspera de Natal'], ['2026-12-25', 'Natal'], ['2026-12-31', 'Último dia do ano'],
+  ['2026-11-02', 'Finados'], ['2026-11-20', 'Dia da Consciência Negra'], ['2026-12-24', 'Véspera de Natal'], ['2026-12-25', 'Natal'], ['2026-12-31', 'Último dia do ano'],
   ['2027-01-01', 'Ano-novo'], ['2027-02-08', 'Carnaval'], ['2027-02-09', 'Carnaval'], ['2027-03-26', 'Sexta-feira Santa'],
   ['2027-04-21', 'Tiradentes'], ['2027-05-27', 'Corpus Christi'], ['2027-09-07', 'Independência'], ['2027-10-12', 'Nossa Senhora Aparecida'],
   ['2027-11-02', 'Finados'], ['2027-11-15', 'Proclamação da República'], ['2027-12-24', 'Véspera de Natal'], ['2027-12-31', 'Último dia do ano'],
