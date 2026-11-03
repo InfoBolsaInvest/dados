@@ -70,12 +70,14 @@ for (const [id, nome] of Object.entries(NOMES)) {
 // falhou fora dos passos conhecidos (ex.: antes de buscar as cotações)
 if (process.env.JOB_STATUS === 'failure' && !Object.values(passos).includes('failure')) novas.push('Outro passo do robô');
 
-// robô parado: compara com a última rodada que chegou até aqui
+// robô parado: compara com a última rodada que chegou até aqui. Só nas rodadas automáticas e dentro do
+// horário do pregão (10h às 18h45): rodada na mão à noite não é sinal de que o despertador falhou
 const parado = [];
-if (estado.ultima) {
+const minBrt = brt(agora).getUTCHours() * 60 + brt(agora).getUTCMinutes();
+const noHorario = minBrt >= 10 * 60 && minBrt <= 18 * 60 + 50;
+if (estado.ultima && noHorario && ['schedule', 'relogio'].includes(process.env.EVENTO)) {
   const u = new Date(estado.ultima);
   const min = Math.round((agora - u) / 60000);
-  const minBrt = brt(agora).getUTCHours() * 60 + brt(agora).getUTCMinutes();
   if (dia(u) === dia(agora) && min >= PARADO) parado.push(`O robô ficou ${min} minutos sem rodar (das ${hora(u)} às ${hora(agora)}).`);
   else if (dia(u) !== dia(agora) && minBrt >= 10 * 60 + PARADO) parado.push(`A primeira rodada de hoje só aconteceu às ${hora(agora)} (o certo é 10:00).`);
 }
