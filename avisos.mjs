@@ -105,10 +105,11 @@ function avisosDe(u, ja, primeira) {
       }
     }
   }
-  // notícia nova dos ativos da pessoa (na primeira vez, só da última hora)
+  // notícia nova dos ativos da pessoa (na primeira vez, só da última hora; depois, das últimas 16 horas,
+  // pra de manhã pegar o que saiu à noite, quando o robô não roda)
   if (n.noticias !== false) {
     const avisar = u.avisoNoticia || {};
-    const limite = new Date(agora.getTime() - (primeira ? 1 : 3) * 3600 * 1000);
+    const limite = new Date(agora.getTime() - (primeira ? 1 : 16) * 3600 * 1000);
     const novas = noticias.filter((x) => {
       const tk = x.t.find((t) => watch.includes(t) && avisar[t] !== false);
       if (!tk) return false;
