@@ -46,6 +46,10 @@ on:
         description: 'Ler agora as carteiras dos clientes no Investidor10 (1 = sim)'
         required: false
         default: ''
+      resumo:
+        description: 'Refazer agora o resumo do fechamento com IA (1 = sim)'
+        required: false
+        default: ''
       relogio:
         description: 'Só para o despertador externo (cron-job.org), que dispara a cada 15 minutos. Deixe em branco.'
         required: false
@@ -133,6 +137,17 @@ jobs:
         id: noticias
         continue-on-error: true
         run: node noticias.mjs
+      - name: Resumo do fechamento com IA (Claude Haiku; 1x por dia, 18h30)
+        id: resumo
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RESUMO: ${{ github.event.inputs.resumo }}
+        run: |
+          # o SDK só é instalado quando pode ser usado (depois das 18h30 ou no teste)
+          H=$(TZ=America/Sao_Paulo date +%H%M)
+          if [ "$H" -ge 1830 ] || [ "$RESUMO" = "1" ]; then npm install --no-save --no-audit --no-fund @anthropic-ai/sdk@1.4.0 > /dev/null; fi
+          node resumo.mjs
       - name: Entrar no Google sem chave (Workload Identity Federation)
         id: google
         continue-on-error: true
@@ -145,7 +160,7 @@ jobs:
       - name: Repor o que falhou com a versão publicada
         id: repor
         run: |
-          for f in mercado fundamentos isin calendario videos noticias rendafixa; do
+          for f in mercado fundamentos isin calendario videos noticias rendafixa resumo; do
             [ -f "site/$f.json" ] || curl -sf "https://infobolsainvest.github.io/dados/$f.json" -o "site/$f.json" || echo "sem $f.json"
           done
       - name: Avisos no celular
@@ -202,7 +217,7 @@ jobs:
           TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
           # só o resultado de cada passo (as saídas, como a chave do Google, ficam de fora)
           PASSOS: >-
-            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
+            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","resumo":"${{ steps.resumo.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
           JOB_STATUS: ${{ job.status }}
           EVENTO: ${{ github.event.inputs.relogio == '1' && 'relogio' || github.event_name }}
           MODO: ${{ github.event.inputs.telegram }}

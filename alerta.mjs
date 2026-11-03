@@ -26,6 +26,7 @@ const NOMES = {
   rf: 'Renda fixa',
   videos: 'Vídeos do canal',
   noticias: 'Notícias',
+  resumo: 'Resumo do fechamento (IA)',
   google: 'Entrada no Google (avisos no celular)',
   repor: 'Reposição dos arquivos',
   avisos: 'Avisos no celular',

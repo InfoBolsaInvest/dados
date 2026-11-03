@@ -19,6 +19,8 @@ const mercado = (() => { try { return ler('mercado.json'); } catch { return {}; 
 const noticias = ler('noticias.json').n || [];
 const fundamentos = ler('fundamentos.json').a || {};
 const videos = ler('videos.json');
+// resumo do fechamento de hoje (resumo.mjs): o aviso de fechamento abre o resumo no app
+const temResumo = (() => { try { return ler('resumo.json').d === new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10); } catch { return false; } })();
 
 const agora = new Date();
 const brt = new Date(agora.getTime() - 3 * 3600 * 1000);
@@ -162,7 +164,7 @@ function avisosDe(u, ja, primeira) {
   if (n.fechamento !== false && minutos >= 18 * 60 + 30 && pregaoHoje && mercado.ibov) {
     const [pts, v] = mercado.ibov;
     const dol = mercado.mundo?.USD || mercado.dolar;
-    add(`fech:${hoje}`, `Fechamento: Ibovespa ${v >= 0 ? 'sobe' : 'cai'} ${pct(Math.abs(v)).replace('+', '')}`, `Aos ${Math.round(pts).toLocaleString('pt-BR')} pontos.` + (dol ? ` Dólar a ${reais(dol[0])}.` : ''), { tela: 'hoje' });
+    add(`fech:${hoje}`, `Fechamento: Ibovespa ${v >= 0 ? 'sobe' : 'cai'} ${pct(Math.abs(v)).replace('+', '')}`, `Aos ${Math.round(pts).toLocaleString('pt-BR')} pontos.` + (dol ? ` Dólar a ${reais(dol[0])}.` : '') + (temResumo ? ' Toque pra ver o porquê.' : ''), { tela: 'hoje', ...(temResumo ? { resumo: '1' } : {}) });
   }
   // vencimento da renda fixa: na semana do vencimento e no dia (o robô não roda no fim de semana: o "no dia"
   // vale até 3 dias depois, pra quem vence num sábado ou domingo ser avisado na segunda)
