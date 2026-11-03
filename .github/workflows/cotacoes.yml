@@ -12,6 +12,10 @@ on:
         description: 'Buscar o histórico agora (1 = sim)'
         required: false
         default: ''
+      teste:
+        description: 'Mandar um aviso de teste pra cada celular registrado (1 = sim)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -94,6 +98,7 @@ jobs:
         continue-on-error: true
         env:
           GOOGLE_TOKEN: ${{ steps.google.outputs.access_token }}
+          TESTE: ${{ github.event.inputs.teste }}
         run: node avisos.mjs
       - name: Guardar o histórico novo
         if: hashFiles('.historico-novo') != ''

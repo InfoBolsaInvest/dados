@@ -172,6 +172,18 @@ function avisosDe(u, ja, primeira) {
 // ---------- roda ----------
 // o mesmo celular em duas contas (alguém saiu sem apagar o registro): vale só a conta registrada por último
 const todas = (await contas()).filter((u) => u.push?.token);
+
+// teste manual (rodar o robô com "aviso de teste" = 1): manda um aviso só, pra cada celular registrado
+if (process.env.TESTE === '1') {
+  let ok = 0;
+  for (const u of todas) {
+    const r = await mandar(u.push.token, 'Teste da InfoBolsa', 'Se você está lendo isto, os avisos no celular estão funcionando. Toque pra abrir o app.', { tela: 'hoje' });
+    console.log(`teste para ${u.uid.slice(0, 6)}…: ${r}`);
+    if (r === 'ok') ok++;
+  }
+  console.log(`ok: aviso de teste mandado para ${ok} de ${todas.length} celular(es)`);
+  process.exit(0);
+}
 const donoDoToken = new Map();
 for (const u of todas) {
   const atual = donoDoToken.get(u.push.token);
