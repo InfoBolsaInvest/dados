@@ -4,3 +4,4 @@ node_modules/
 .cotahist.zip
 .isin.json
 .cvm.zip
+gha-creds-*.json
