@@ -14,6 +14,8 @@ const FEEDS = [
   ['Suno', 'https://www.suno.com.br/noticias/feed/'],
   ['FIIs', 'https://fiis.com.br/feed/'],
 ];
+// páginas de cotação que o Google Notícias às vezes mistura com notícia
+const NAO_E_NOTICIA = /hist[óo]rico de pre[çc]os|^cota[çc][ãa]o|cota[çc][ãa]o (hoje|em tempo real|e indicadores)|^gr[áa]fico/i;
 const POR_TICKER = 120; // ativos com busca própria no Google Notícias (os mais negociados)
 const DIAS = 7;
 // nomes que aparecem na manchete sem o ticker
@@ -84,7 +86,7 @@ if (ultimaBusca !== hoje) {
       for (const x of itens(xml).slice(0, 6)) {
         const fonte = texto(x.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1]) || 'Google Notícias';
         const it = item(fonte, x, [tk]);
-        if (!it) continue;
+        if (!it || NAO_E_NOTICIA.test(it.ti)) continue;
         it.ti = it.ti.replace(new RegExp(`\\s+-\\s+${fonte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), ''); // tira " - Fonte" do fim
         novas.push(it);
         n++;
@@ -100,7 +102,7 @@ if (ultimaBusca !== hoje) {
 const chave = (n) => n.ti.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 const porChave = new Map();
 for (const n of [...novas, ...publicadas]) {
-  if (n.d < corte) continue;
+  if (n.d < corte || NAO_E_NOTICIA.test(n.ti)) continue;
   const k = chave(n);
   const ja = porChave.get(k);
   if (ja) { ja.t = [...new Set([...ja.t, ...n.t])]; continue; }
