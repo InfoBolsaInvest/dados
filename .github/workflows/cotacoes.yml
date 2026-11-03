@@ -1,5 +1,7 @@
 # Cotações da B3 a cada 15 minutos no pregão (10h às 18h45 de Brasília, de segunda a sexta).
 # Publica os arquivos no GitHub Pages; se a busca falhar, o site continua com os dados anteriores.
+# Quem dispara de verdade é o cron-job.org (relogio=1): o agendamento do próprio GitHub não disparou neste
+# repositório (03/11/2026). O schedule abaixo fica de reserva, caso volte a funcionar.
 name: cotacoes
 
 on:
@@ -40,6 +42,10 @@ on:
         type: choice
         options: [nada, teste, falha]
         default: nada
+      relogio:
+        description: 'Só para o despertador externo (cron-job.org), que dispara a cada 15 minutos. Deixe em branco.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -180,7 +186,7 @@ jobs:
           TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
           PASSOS: ${{ toJSON(steps) }}
           JOB_STATUS: ${{ job.status }}
-          EVENTO: ${{ github.event_name }}
+          EVENTO: ${{ github.event.inputs.relogio == '1' && 'relogio' || github.event_name }}
           MODO: ${{ github.event.inputs.telegram }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node alerta.mjs

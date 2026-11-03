@@ -1,6 +1,6 @@
 // Aviso no Telegram quando alguma parte do robô falha (último passo de toda rodada).
 // Avisa quando a falha começa, lembra a cada 3 horas se continuar e avisa quando volta a funcionar.
-// Também avisa quando o robô ficou parado no horário do pregão (o agendamento do GitHub atrasou ou pulou).
+// Também avisa quando o robô ficou parado no horário do pregão (o despertador ou o agendamento atrasou ou pulou).
 // O que já foi avisado fica em .alerta/estado.json, guardado no cache do Actions entre as rodadas.
 // TELEGRAM_TOKEN e TELEGRAM_CHAT são segredos do repositório; sem eles o passo só escreve no log.
 // O bot é o mesmo das notícias e da carteira dos clientes: aqui só se manda mensagem, nunca se lê
@@ -77,7 +77,7 @@ if (estado.ultima) {
   if (dia(u) === dia(agora) && min >= PARADO) parado.push(`O robô ficou ${min} minutos sem rodar (das ${hora(u)} às ${hora(agora)}).`);
   else if (dia(u) !== dia(agora) && minBrt >= 10 * 60 + PARADO) parado.push(`A primeira rodada de hoje só aconteceu às ${hora(agora)} (o certo é 10:00).`);
 }
-if (process.env.EVENTO === 'schedule') estado.ultima = agora.toISOString(); // rodada na mão não conta
+if (['schedule', 'relogio'].includes(process.env.EVENTO)) estado.ultima = agora.toISOString(); // rodada na mão não conta
 
 const partes = [];
 if (MODO === 'teste') partes.push('Teste: o aviso de falhas do robô do app está ligado.');
