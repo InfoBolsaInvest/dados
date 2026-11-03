@@ -16,6 +16,24 @@ on:
         description: 'Mandar um aviso de teste pra cada celular registrado (1 = sim)'
         required: false
         default: ''
+      recado_titulo:
+        description: 'Recado: título (curto)'
+        required: false
+        default: ''
+      recado_texto:
+        description: 'Recado: texto'
+        required: false
+        default: ''
+      recado_link:
+        description: 'Recado: link que abre ao tocar (opcional, começa com https://)'
+        required: false
+        default: ''
+      recado_para:
+        description: 'Recado: teste = só pro celular do dono; todos = todo mundo com Novidades ligado'
+        required: false
+        type: choice
+        options: [teste, todos]
+        default: teste
 
 permissions:
   contents: write
@@ -99,6 +117,10 @@ jobs:
         env:
           GOOGLE_TOKEN: ${{ steps.google.outputs.access_token }}
           TESTE: ${{ github.event.inputs.teste }}
+          RECADO_TITULO: ${{ github.event.inputs.recado_titulo }}
+          RECADO_TEXTO: ${{ github.event.inputs.recado_texto }}
+          RECADO_LINK: ${{ github.event.inputs.recado_link }}
+          RECADO_PARA: ${{ github.event.inputs.recado_para }}
         run: node avisos.mjs
       - name: Guardar o histórico novo
         if: hashFiles('.historico-novo') != ''

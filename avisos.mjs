@@ -71,6 +71,9 @@ async function guardar(uid, e, alertasAtivos) {
   const limpo = Object.fromEntries(Object.entries(e).filter(([k, t]) => t > corte || alertasAtivos.has(k)));
   await fetch(`${FS}/avisos/${uid}?updateMask.fieldPaths=e`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { e: paraFs(limpo) } }) });
 }
+// chaves dos alertas de preço que ainda existem na conta (ficam guardadas mesmo depois de 15 dias)
+const alertasDe = (u) => new Set(Object.entries(u.alertas || {}).flatMap(([tk, als]) => (als || []).filter((a) => a.tipo === 'preco').map((a) => `alerta:${tk}:${a.dir}:${a.valor}`)));
+
 async function tirarEndereco(uid) {
   await fetch(`${FS}/usuarios/${uid}?updateMask.fieldPaths=push`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: {} }) });
 }
@@ -184,6 +187,30 @@ if (process.env.TESTE === '1') {
   console.log(`ok: aviso de teste mandado para ${ok} de ${todas.length} celular(es)`);
   process.exit(0);
 }
+
+// recado da InfoBolsa (lançamento, aviso geral), disparado à mão pelo workflow com título, texto e link opcional.
+// "teste" vai só pra conta do dono; "todos" vai pra quem deixou "Novidades" ligado.
+// O mesmo recado não vai duas vezes pra mesma pessoa.
+const recado = { titulo: (process.env.RECADO_TITULO || '').trim(), texto: (process.env.RECADO_TEXTO || '').trim(), link: (process.env.RECADO_LINK || '').trim(), para: process.env.RECADO_PARA || 'teste' };
+if (recado.titulo && recado.texto) {
+  // conta do dono pro teste: o e-mail de contato da empresa (público); dá pra trocar pela variável DONO_EMAIL
+  const dono = (process.env.DONO_EMAIL || 'contato@infobolsainvestimentos.com').toLowerCase();
+  const alvo = todas.filter((u) => (recado.para === 'todos' ? u.notif?.novidades !== false : dono && (u.email || '').toLowerCase() === dono));
+  const chave = `recado:${(recado.titulo + recado.texto).toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 60)}`;
+  const dados = recado.link && /^https:\/\//.test(recado.link) ? { url: recado.link } : { tela: 'hoje' };
+  let ok = 0, ja = 0;
+  for (const u of alvo) {
+    const e = { ...((await enviados(u.uid)) || {}) };
+    if (recado.para === 'todos' && e[chave]) { ja++; continue; }
+    const r = await mandar(u.push.token, recado.titulo, recado.texto, dados);
+    if (r === 'sem-endereco') { await tirarEndereco(u.uid); continue; }
+    if (r !== 'ok') { console.log(`recado não foi: ${r}`); continue; }
+    ok++;
+    if (recado.para === 'todos') { e[chave] = Date.now(); await guardar(u.uid, e, alertasDe(u)); }
+  }
+  console.log(`ok: recado (${recado.para}) mandado para ${ok} de ${alvo.length} celular(es)${ja ? `, ${ja} já tinham recebido` : ''}`);
+  process.exit(0);
+}
 const donoDoToken = new Map();
 for (const u of todas) {
   const atual = donoDoToken.get(u.push.token);
@@ -205,7 +232,6 @@ for (const u of todas) {
     mandados++;
     mudou = true;
   }
-  const alertasAtivos = new Set(Object.entries(u.alertas || {}).flatMap(([tk, als]) => (als || []).filter((a) => a.tipo === 'preco').map((a) => `alerta:${tk}:${a.dir}:${a.valor}`)));
-  if (mudou) await guardar(u.uid, ja, alertasAtivos);
+  if (mudou) await guardar(u.uid, ja, alertasDe(u));
 }
 console.log(`ok: ${mandados} aviso(s) para ${pessoas} pessoa(s) com notificação ligada`);
