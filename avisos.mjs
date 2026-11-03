@@ -180,7 +180,8 @@ async function lerDonos() {
 
 // ---------- roda ----------
 // o mesmo celular em duas contas (alguém saiu sem apagar o registro): vale só a conta registrada por último
-const todas = (await contas()).filter((u) => u.push?.token);
+const existentes = await contas();
+const todas = existentes.filter((u) => u.push?.token);
 
 // teste manual (rodar o robô com "aviso de teste" = 1): manda um aviso só, pra cada celular registrado
 if (process.env.TESTE === '1') {
@@ -263,3 +264,38 @@ for (const u of todas) {
   if (mudou) await guardar(u.uid, ja, alertasDe(u));
 }
 console.log(`ok: ${mandados} aviso(s) para ${pessoas} pessoa(s) com notificação ligada`);
+
+// Conta excluída no app (o app apaga usuarios/{uid}): 1x por dia, na primeira rodada, o robô apaga o que sobrou
+// dela, como prometido na política de privacidade: o histórico de avisos (avisos/{uid}) e o e-mail e o uid
+// nas mensagens de problemas e sugestões (o texto fica, sem ligação com a pessoa).
+// (lista de contas vazia é sinal de erro na leitura, nunca de que todo mundo saiu: aí não mexe em nada)
+if (minutos < 10 * 60 + 15 && existentes.length) {
+  try {
+    const vivos = new Set(existentes.map((u) => u.uid));
+    let avisosApagados = 0, sugestoesSoltas = 0, pagina = '';
+    do {
+      const r = await fetch(`${FS}/avisos?pageSize=300&mask.fieldPaths=e${pagina ? `&pageToken=${pagina}` : ''}`, { headers: H });
+      if (!r.ok) throw new Error(`Firestore avisos: ${r.status}`);
+      const j = await r.json();
+      for (const d of j.documents || []) {
+        if (vivos.has(d.name.split('/').pop())) continue;
+        if ((await fetch(`https://firestore.googleapis.com/v1/${d.name}`, { method: 'DELETE', headers: H })).ok) avisosApagados++;
+      }
+      pagina = j.nextPageToken || '';
+    } while (pagina);
+    pagina = '';
+    do {
+      const r = await fetch(`${FS}/sugestoes?pageSize=300&mask.fieldPaths=uid${pagina ? `&pageToken=${pagina}` : ''}`, { headers: H });
+      if (!r.ok) throw new Error(`Firestore sugestoes: ${r.status}`);
+      const j = await r.json();
+      for (const d of j.documents || []) {
+        const uid = d.fields?.uid?.stringValue;
+        if (!uid || vivos.has(uid)) continue;
+        const tirar = 'updateMask.fieldPaths=uid&updateMask.fieldPaths=email&updateMask.fieldPaths=responder';
+        if ((await fetch(`https://firestore.googleapis.com/v1/${d.name}?${tirar}`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: {} }) })).ok) sugestoesSoltas++;
+      }
+      pagina = j.nextPageToken || '';
+    } while (pagina);
+    console.log(`limpeza de contas excluídas: ${avisosApagados} histórico(s) de aviso apagado(s), ${sugestoesSoltas} sugestão(ões) desligada(s) da pessoa`);
+  } catch (e) { console.log(`limpeza de contas excluídas: ${e.message}`); }
+}
