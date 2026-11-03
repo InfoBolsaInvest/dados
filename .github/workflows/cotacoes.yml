@@ -60,6 +60,7 @@ jobs:
           path: |
             site/historico
             site/longo
+            site/tesouro
           key: historico-${{ github.run_id }}
           restore-keys: historico-
       - name: Buscar cotações
@@ -91,6 +92,11 @@ jobs:
       - name: Agenda (Copom, feriados, IBGE)
         continue-on-error: true
         run: node calendario.mjs
+      - name: Renda fixa (Banco Central e Tesouro; 1x por dia)
+        continue-on-error: true
+        env:
+          HISTORICO: ${{ github.event.inputs.historico }}
+        run: node rendafixa.mjs
       - name: Vídeos do canal
         continue-on-error: true
         run: node videos.mjs
@@ -108,7 +114,7 @@ jobs:
           create_credentials_file: false # só o acesso temporário (1 hora); nenhum arquivo de credencial na pasta
       - name: Repor o que falhou com a versão publicada
         run: |
-          for f in mercado fundamentos isin calendario videos noticias; do
+          for f in mercado fundamentos isin calendario videos noticias rendafixa; do
             [ -f "site/$f.json" ] || curl -sf "https://infobolsainvest.github.io/dados/$f.json" -o "site/$f.json" || echo "sem $f.json"
           done
       - name: Avisos no celular
@@ -129,6 +135,7 @@ jobs:
           path: |
             site/historico
             site/longo
+            site/tesouro
           key: historico-${{ github.run_id }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
