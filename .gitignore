@@ -5,3 +5,4 @@ node_modules/
 .isin.json
 .cvm.zip
 gha-creds-*.json
+.alerta/
