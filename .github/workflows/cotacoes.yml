@@ -86,7 +86,7 @@ jobs:
           create_credentials_file: false # só o acesso temporário (1 hora); nenhum arquivo de credencial na pasta
       - name: Repor o que falhou com a versão publicada
         run: |
-          for f in fundamentos isin calendario videos noticias; do
+          for f in mercado fundamentos isin calendario videos noticias; do
             [ -f "site/$f.json" ] || curl -sf "https://infobolsainvest.github.io/dados/$f.json" -o "site/$f.json" || echo "sem $f.json"
           done
       - name: Avisos no celular

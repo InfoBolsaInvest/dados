@@ -16,6 +16,11 @@ const FERIADOS = [
   ['2027-04-21', 'Tiradentes'], ['2027-05-27', 'Corpus Christi'], ['2027-09-07', 'Independência'], ['2027-10-12', 'Nossa Senhora Aparecida'],
   ['2027-11-02', 'Finados'], ['2027-11-15', 'Proclamação da República'], ['2027-12-24', 'Véspera de Natal'], ['2027-12-31', 'Último dia do ano'],
 ];
+// lá de fora, que mexe com dólar e bolsa aqui (só datas confirmadas)
+const EXTERIOR = [
+  ['2026-11-03', 'Eleição nos EUA', 'Renova o Congresso americano; costuma mexer com o dólar e com as bolsas'],
+  ['2026-12-09', 'Decisão de juros nos EUA (Fed)', 'O juro americano mexe com o dólar e com o dinheiro estrangeiro na bolsa daqui'],
+];
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
 const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -25,6 +30,7 @@ for (const [dec, ata] of COPOM) {
   ev.push({ d: ata, t: 'Ata do Copom', s: 'Explica a decisão e dá pistas dos próximos passos do juro' });
 }
 for (const [d, nome] of FERIADOS) ev.push({ d, t: 'Sem pregão na B3', s: nome });
+for (const [d, t, s] of EXTERIOR) ev.push({ d, t, s });
 
 try {
   const fim = new Date(Date.now() + 200 * 86400 * 1000);

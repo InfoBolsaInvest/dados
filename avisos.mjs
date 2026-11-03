@@ -14,7 +14,8 @@ const POR_RODADA = 5; // máximo de avisos por pessoa a cada 15 minutos
 
 const ler = (f) => JSON.parse(readFileSync(`site/${f}`, 'utf8'));
 const cot = ler('cotacoes.json').q;
-const mercado = ler('mercado.json');
+// mercado.json pode faltar se a brapi e o Yahoo caírem juntos: sem ele, só não sai o aviso de fechamento
+const mercado = (() => { try { return ler('mercado.json'); } catch { return {}; } })();
 const noticias = ler('noticias.json').n || [];
 const fundamentos = ler('fundamentos.json').a || {};
 const videos = ler('videos.json');
@@ -23,7 +24,8 @@ const agora = new Date();
 const brt = new Date(agora.getTime() - 3 * 3600 * 1000);
 const hoje = brt.toISOString().slice(0, 10);
 const minutos = brt.getUTCHours() * 60 + brt.getUTCMinutes();
-const reais = (v, c = 2) => 'R$ ' + v.toFixed(c).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+// ponto de milhar só na parte inteira ("R$ 1.234,5678", nunca "R$ 0,2.025")
+const reais = (v, c = 2) => { const [i, d] = v.toFixed(c).split('.'); return `R$ ${i.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}${d ? ',' + d : ''}`; };
 // provento abaixo de R$ 1 com até 4 casas (R$ 0,095), igual ao app
 const provTxt = (v) => { let c = v >= 1 ? 2 : 4; while (c > 2 && Math.round(v * 10 ** c) % 10 === 0) c--; return reais(v, c); };
 const pct = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2).replace('.', ',')}%`;
@@ -62,10 +64,11 @@ async function enviados(uid) {
   if (!r.ok) throw new Error(`Firestore avisos: ${r.status}`);
   return valor({ mapValue: { fields: (await r.json()).fields || {} } }).e || {};
 }
-async function guardar(uid, e) {
-  // guarda só os últimos 15 dias
+async function guardar(uid, e, alertasAtivos) {
+  // guarda só os últimos 15 dias; alerta de preço que já disparou fica guardado enquanto existir na conta
+  // (senão voltaria a avisar a cada 15 dias com o preço ainda além do alvo)
   const corte = Date.now() - 15 * 86400 * 1000;
-  const limpo = Object.fromEntries(Object.entries(e).filter(([, t]) => t > corte));
+  const limpo = Object.fromEntries(Object.entries(e).filter(([k, t]) => t > corte || alertasAtivos.has(k)));
   await fetch(`${FS}/avisos/${uid}?updateMask.fieldPaths=e`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { e: paraFs(limpo) } }) });
 }
 async function tirarEndereco(uid) {
@@ -83,13 +86,17 @@ async function mandar(token, titulo, texto, dados) {
   return /UNREGISTERED|registration-token-not-registered|INVALID_ARGUMENT.*token/i.test(erro) ? 'sem-endereco' : `erro ${r.status}`;
 }
 
+// dia de pregão: dia útil, fora dos feriados da B3 (calendario.json) e com cotação de hoje
+const feriado = (() => { try { return ler('calendario.json').some((e) => e.d === hoje && /Sem pregão/.test(e.t)); } catch { return false; } })();
+const pregaoHoje = brt.getUTCDay() % 6 !== 0 && !feriado && !!mercado.atualizadoEm && new Date(new Date(mercado.atualizadoEm).getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10) === hoje;
+
 // ---------- o que cada pessoa deve receber agora ----------
 function avisosDe(u, ja, primeira) {
   const n = u.notif || {};
   const watch = u.watch || [];
   const qtd = u.qtd || {};
   const lista = [];
-  const add = (chave, titulo, texto, dados = {}) => { if (!ja[chave]) lista.push({ chave, titulo, texto, dados }); };
+  const add = (chave, titulo, texto, dados = {}) => { if (!ja[chave] && !lista.some((x) => x.chave === chave)) lista.push({ chave, titulo, texto, dados }); };
 
   // alertas de preço: preço alvo vai uma vez; variação vai no máximo uma vez por dia
   if (n.alertas !== false) {
@@ -100,7 +107,8 @@ function avisosDe(u, ja, primeira) {
       for (const al of als || []) {
         if (al.tipo === 'preco' && ((al.dir === 'acima' && preco >= al.valor) || (al.dir === 'abaixo' && preco <= al.valor)))
           add(`alerta:${tk}:${al.dir}:${al.valor}`, `${tk} chegou a ${reais(preco)}`, `Seu alerta era ${al.dir === 'acima' ? 'subir até' : 'cair até'} ${reais(al.valor)}.`, { tk });
-        if (al.tipo === 'var' && Math.abs(v) >= al.valor)
+        // variação só em dia de pregão e depois das 10h15 (antes disso a cotação ainda é a do pregão anterior)
+        if (al.tipo === 'var' && pregaoHoje && minutos >= 10 * 60 + 15 && Math.abs(v) >= al.valor)
           add(`var:${tk}:${al.valor}:${hoje}`, `${tk} ${v >= 0 ? 'sobe' : 'cai'} ${pct(Math.abs(v)).replace('+', '')} hoje`, `Passou dos ${al.valor.toString().replace('.', ',')}% do seu alerta. Está em ${reais(preco)}.`, { tk });
       }
     }
@@ -131,18 +139,24 @@ function avisosDe(u, ja, primeira) {
   // provento: data com (a partir das 10h) e dia do pagamento
   if (n.proventos !== false && minutos >= 10 * 60) {
     for (const tk of watch) {
+      // junta o que tem a mesma data com e de pagamento (JCP + dividendo, parcelas iguais), como o app
+      const juntos = new Map();
       for (const [com, pag, v, tipo] of fundamentos[tk]?.p || []) {
-        const un = tk.endsWith('11') ? 'cota' : 'ação';
-        if (com === hoje) add(`com:${tk}:${com}:${v}`, `${tk}: hoje é a data com`, `Quem tiver ${tk} no fim do dia recebe ${provTxt(v)} por ${un} (${tipo.toLowerCase()})${pag ? `, pago em ${dataCurta(pag)}` : ''}.`, { tk });
-        if (pag === hoje) add(`pag:${tk}:${pag}:${v}`, `${tk} paga hoje`, `${provTxt(v)} por ${un}` + (qtd[tk] > 0 ? `: ${reais(v * qtd[tk])} pra você.` : '.'), { tk });
+        const k = `${com}|${pag}`;
+        const ja2 = juntos.get(k);
+        if (ja2) { ja2.v += v; if (!ja2.tipos.includes(tipo)) ja2.tipos.push(tipo); } else juntos.set(k, { com, pag, v, tipos: [tipo] });
+      }
+      const un = tk.endsWith('11') ? 'cota' : 'ação';
+      for (const { com, pag, v, tipos } of juntos.values()) {
+        const tipoTxt = tipos.join(' + ').toLowerCase();
+        if (com === hoje) add(`com:${tk}:${com}:${pag}`, `${tk}: hoje é a data com`, `Quem tiver ${tk} no fim do dia recebe ${provTxt(v)} por ${un} (${tipoTxt})${pag ? `, pago em ${dataCurta(pag)}` : ''}.`, { tk });
+        if (pag === hoje) add(`pag:${tk}:${com}:${pag}`, `${tk} paga hoje`, `${provTxt(v)} por ${un} (${tipoTxt})` + (qtd[tk] > 0 ? `: ${reais(v * qtd[tk])} pra você.` : '.'), { tk });
       }
     }
   }
-  // fechamento: primeira rodada depois das 17h30, só em dia de pregão
-  // dia de pregão: dia útil, fora dos feriados da B3 (calendario.json) e com cotação de hoje
-const feriado = ler('calendario.json').some((e) => e.d === hoje && /Sem pregão/.test(e.t));
-const pregaoHoje = brt.getUTCDay() % 6 !== 0 && !feriado && mercado.atualizadoEm && new Date(new Date(mercado.atualizadoEm).getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10) === hoje;
-  if (n.fechamento !== false && minutos >= 17 * 60 + 30 && pregaoHoje && mercado.ibov) {
+  // fechamento: rodada das 18h30, só em dia de pregão (a B3 fecha às 17h ou às 18h, conforme o horário de verão
+  // dos EUA, e a cotação pode ter até 30 min de atraso)
+  if (n.fechamento !== false && minutos >= 18 * 60 + 30 && pregaoHoje && mercado.ibov) {
     const [pts, v] = mercado.ibov;
     const dol = mercado.mundo?.USD || mercado.dolar;
     add(`fech:${hoje}`, `Fechamento: Ibovespa ${v >= 0 ? 'sobe' : 'cai'} ${pct(Math.abs(v)).replace('+', '')}`, `Aos ${Math.round(pts).toLocaleString('pt-BR')} pontos.` + (dol ? ` Dólar a ${reais(dol[0])}.` : ''), { tela: 'hoje' });
@@ -156,10 +170,16 @@ const pregaoHoje = brt.getUTCDay() % 6 !== 0 && !feriado && mercado.atualizadoEm
 }
 
 // ---------- roda ----------
-const todas = await contas();
+// o mesmo celular em duas contas (alguém saiu sem apagar o registro): vale só a conta registrada por último
+const todas = (await contas()).filter((u) => u.push?.token);
+const donoDoToken = new Map();
+for (const u of todas) {
+  const atual = donoDoToken.get(u.push.token);
+  if (!atual || (u.push.em || '') > (atual.push.em || '')) donoDoToken.set(u.push.token, u);
+}
 let mandados = 0, pessoas = 0;
 for (const u of todas) {
-  if (!u.push?.token) continue;
+  if (donoDoToken.get(u.push.token) !== u) continue;
   pessoas++;
   const antes = await enviados(u.uid);
   const ja = { ...(antes || {}) };
@@ -173,6 +193,7 @@ for (const u of todas) {
     mandados++;
     mudou = true;
   }
-  if (mudou) await guardar(u.uid, ja);
+  const alertasAtivos = new Set(Object.entries(u.alertas || {}).flatMap(([tk, als]) => (als || []).filter((a) => a.tipo === 'preco').map((a) => `alerta:${tk}:${a.dir}:${a.valor}`)));
+  if (mudou) await guardar(u.uid, ja, alertasAtivos);
 }
 console.log(`ok: ${mandados} aviso(s) para ${pessoas} pessoa(s) com notificação ligada`);

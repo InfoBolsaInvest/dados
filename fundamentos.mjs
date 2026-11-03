@@ -59,6 +59,7 @@ for (const [tk, [, tipo]] of Object.entries(cat)) {
 }
 const prov = {};
 let consultas = 0, falhas = 0;
+const falhouB3 = new Set(); // prefixos (PETR, MXRF...) cuja consulta de proventos falhou hoje
 function guardar(lista) {
   for (const d of lista || []) {
     const tk = tickerDoIsin[d.isinCode];
@@ -69,15 +70,15 @@ function guardar(lista) {
   }
 }
 const fila = [
-  ...[...empresas].map((c) => `${B3}/listedCompaniesProxy/CompanyCall/GetListedSupplementCompany/${b64({ issuingCompany: c, language: 'pt-br' })}`),
-  ...[...fundos].map((c) => `${B3}/fundsProxy/fundsCall/GetListedSupplementFunds/${b64({ cnpj: '0', identifierFund: c, typeFund: 7 })}`),
+  ...[...empresas].map((c) => ({ prefixo: c, url: `${B3}/listedCompaniesProxy/CompanyCall/GetListedSupplementCompany/${b64({ issuingCompany: c, language: 'pt-br' })}` })),
+  ...[...fundos].map((c) => ({ prefixo: c, url: `${B3}/fundsProxy/fundsCall/GetListedSupplementFunds/${b64({ cnpj: '0', identifierFund: c, typeFund: 7 })}` })),
 ];
 await Promise.all(Array.from({ length: 6 }, async () => {
   while (fila.length) {
-    const url = fila.shift();
+    const { url, prefixo } = fila.shift();
     const j = await b3(url);
     consultas++;
-    if (!j) { falhas++; continue; }
+    if (!j) { falhas++; falhouB3.add(prefixo); continue; }
     guardar(Array.isArray(j) ? j[0]?.cashDividends : j.cashDividends);
     await espera(100);
   }
@@ -181,7 +182,13 @@ for (const tk of new Set([...Object.keys(prov), ...Object.keys(vp)])) {
   if (prov[tk]) a[tk].p = prov[tk];
   if (vp[tk]) a[tk].vp = vp[tk];
 }
-// ativo que falhou hoje fica com o dado de ontem
-for (const [tk, x] of Object.entries(anterior.a || {})) if (!a[tk] && cat[tk]) a[tk] = x;
+// o que falhou hoje fica com o dado de ontem: o ativo inteiro, ou só a parte que faltou
+// (proventos de quem a consulta na B3 falhou; valor patrimonial quando a CVM ou o Yahoo não responderam)
+for (const [tk, x] of Object.entries(anterior.a || {})) {
+  if (!cat[tk]) continue;
+  if (!a[tk]) { a[tk] = x; continue; }
+  if (!a[tk].p && x.p && falhouB3.has(tk.slice(0, 4))) a[tk].p = x.p;
+  if (!a[tk].vp && x.vp) a[tk].vp = x.vp;
+}
 writeFileSync('site/fundamentos.json', JSON.stringify({ atualizadoEm: agora.toISOString(), a }));
 console.log(`ok: fundamentos de ${Object.keys(a).length} ativos`);
