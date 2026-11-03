@@ -164,6 +164,18 @@ function avisosDe(u, ja, primeira) {
     const dol = mercado.mundo?.USD || mercado.dolar;
     add(`fech:${hoje}`, `Fechamento: Ibovespa ${v >= 0 ? 'sobe' : 'cai'} ${pct(Math.abs(v)).replace('+', '')}`, `Aos ${Math.round(pts).toLocaleString('pt-BR')} pontos.` + (dol ? ` Dólar a ${reais(dol[0])}.` : ''), { tela: 'hoje' });
   }
+  // vencimento da renda fixa: na semana do vencimento e no dia (o robô não roda no fim de semana: o "no dia"
+  // vale até 3 dias depois, pra quem vence num sábado ou domingo ser avisado na segunda)
+  if (n.rendafixa !== false && minutos >= 10 * 60) {
+    for (const x of u.rf || []) {
+      if (!x?.venc || !x.id) continue;
+      const d = Math.round((new Date(x.venc + 'T12:00:00Z') - new Date(hoje + 'T12:00:00Z')) / 86400000);
+      const nome = x.produto === 'Tesouro' ? x.nome : `${x.produto} ${x.nome || ''}`.trim();
+      const aplicado = x.valor ? ` Você aplicou ${reais(x.valor)}.` : '';
+      if (d >= 1 && d <= 7) add(`rfsem:${x.id}:${x.venc}`, `${nome} vence ${d === 1 ? 'amanhã' : `em ${d} dias`}`, `Vencimento em ${dataCurta(x.venc)}.${aplicado} Veja quanto deve render em Meus ativos.`, { tela: 'ativos' });
+      if (d <= 0 && d >= -3) add(`rfdia:${x.id}:${x.venc}`, `${nome} ${d === 0 ? 'vence hoje' : 'venceu'}`, `Vencimento em ${dataCurta(x.venc)}: o dinheiro cai na conta da corretora ou do banco.${aplicado}`, { tela: 'ativos' });
+    }
+  }
   // vídeo novo do canal (dos últimos 2 dias)
   if (n.videos) {
     const doisDias = new Date(brt.getTime() - 2 * 86400 * 1000).toISOString().slice(0, 10);
