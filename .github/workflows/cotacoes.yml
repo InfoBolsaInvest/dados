@@ -184,7 +184,9 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
-          PASSOS: ${{ toJSON(steps) }}
+          # só o resultado de cada passo (as saídas, como a chave do Google, ficam de fora)
+          PASSOS: >-
+            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
           JOB_STATUS: ${{ job.status }}
           EVENTO: ${{ github.event.inputs.relogio == '1' && 'relogio' || github.event_name }}
           MODO: ${{ github.event.inputs.telegram }}

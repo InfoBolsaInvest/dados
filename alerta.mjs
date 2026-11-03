@@ -52,11 +52,11 @@ let estado = { falhas: {}, ultima: null };
 try { estado = JSON.parse(readFileSync(ARQ, 'utf8')); } catch {}
 
 const passos = JSON.parse(process.env.PASSOS || '{}');
-if (MODO === 'falha') passos.videos = { outcome: 'failure' };
+if (MODO === 'falha') passos.videos = 'failure';
 
 const novas = [], seguem = [], voltaram = [];
 for (const [id, nome] of Object.entries(NOMES)) {
-  const r = passos[id]?.outcome;
+  const r = passos[id]; // success, failure, skipped ou vazio (não chegou no passo)
   const antes = estado.falhas[id];
   if (r === 'failure') {
     if (!antes) { novas.push(nome); estado.falhas[id] = { desde: agora.toISOString(), avisado: agora.toISOString() }; }
@@ -66,7 +66,7 @@ for (const [id, nome] of Object.entries(NOMES)) {
   } // pulado (skipped) não muda nada: o passo nem rodou
 }
 // falhou fora dos passos conhecidos (ex.: antes de buscar as cotações)
-if (process.env.JOB_STATUS === 'failure' && !Object.values(passos).some((p) => p.outcome === 'failure')) novas.push('Outro passo do robô');
+if (process.env.JOB_STATUS === 'failure' && !Object.values(passos).includes('failure')) novas.push('Outro passo do robô');
 
 // robô parado: compara com a última rodada que chegou até aqui
 const parado = [];
