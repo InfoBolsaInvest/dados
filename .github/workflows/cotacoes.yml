@@ -35,7 +35,7 @@ on:
         options: [teste, todos]
         default: teste
       telegram:
-        description: 'Telegram: teste = mensagem de teste (ou o código da conversa, na 1a vez); falha = simula uma falha'
+        description: 'Telegram: teste = mensagem de teste; falha = simula uma falha'
         required: false
         type: choice
         options: [nada, teste, falha]

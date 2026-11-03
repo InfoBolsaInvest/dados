@@ -3,6 +3,8 @@
 // Também avisa quando o robô ficou parado no horário do pregão (o agendamento do GitHub atrasou ou pulou).
 // O que já foi avisado fica em .alerta/estado.json, guardado no cache do Actions entre as rodadas.
 // TELEGRAM_TOKEN e TELEGRAM_CHAT são segredos do repositório; sem eles o passo só escreve no log.
+// O bot é o mesmo das notícias e da carteira dos clientes: aqui só se manda mensagem, nunca se lê
+// (getUpdates brigaria com o programa que já recebe as mensagens dele).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
@@ -44,17 +46,7 @@ async function enviar(chat, texto) {
   if (!r.ok) throw new Error(`Telegram ${r.status}: ${(await r.text()).slice(0, 200)}`);
 }
 
-if (!TOKEN) { console.log('Telegram não configurado (falta TELEGRAM_TOKEN): sem aviso'); process.exit(0); }
-
-// Primeira configuração: sem TELEGRAM_CHAT, responde a quem mandou mensagem pro bot com o código da conversa
-if (!CHAT) {
-  if (MODO !== 'teste') { console.log('falta TELEGRAM_CHAT: rode com telegram=teste depois de mandar um oi pro bot'); process.exit(0); }
-  const r = await (await fetch(`https://api.telegram.org/bot${TOKEN}/getUpdates`)).json();
-  const chats = [...new Set((r.result || []).map((u) => u.message?.chat?.id).filter(Boolean))];
-  for (const c of chats) await enviar(c, `O código desta conversa é ${c}\n\nCole no GitHub como TELEGRAM_CHAT para receber os avisos do robô da InfoBolsa.`);
-  console.log(chats.length ? `código mandado para ${chats.length} conversa(s)` : 'ninguém mandou mensagem pro bot ainda');
-  process.exit(0);
-}
+if (!TOKEN || !CHAT) { console.log('Telegram não configurado (falta TELEGRAM_TOKEN ou TELEGRAM_CHAT): sem aviso'); process.exit(0); }
 
 let estado = { falhas: {}, ultima: null };
 try { estado = JSON.parse(readFileSync(ARQ, 'utf8')); } catch {}
@@ -88,7 +80,7 @@ if (estado.ultima) {
 if (process.env.EVENTO === 'schedule') estado.ultima = agora.toISOString(); // rodada na mão não conta
 
 const partes = [];
-if (MODO === 'teste') partes.push('Teste: o aviso de falhas do robô da InfoBolsa está ligado.');
+if (MODO === 'teste') partes.push('Teste: o aviso de falhas do robô do app está ligado.');
 if (novas.length) partes.push(`Parou de funcionar:\n${novas.map((n) => `• ${n}`).join('\n')}`);
 if (seguem.length) partes.push(`Continua com problema:\n${seguem.map((n) => `• ${n}`).join('\n')}`);
 if (voltaram.length) partes.push(`Voltou a funcionar:\n${voltaram.map((n) => `• ${n}`).join('\n')}`);
@@ -97,7 +89,7 @@ partes.push(...parado);
 if (partes.length) {
   if (novas.length || seguem.length) partes.push('O app continua com os últimos dados que deram certo.');
   if (LINK && (novas.length || seguem.length)) partes.push(`Detalhes: ${LINK}`);
-  try { await enviar(CHAT, `Robô InfoBolsa (${hora(agora)})\n\n${partes.join('\n\n')}`); console.log('aviso mandado no Telegram'); }
+  try { await enviar(CHAT, `📱 App InfoBolsa, robô de dados (${hora(agora)})\n\n${partes.join('\n\n')}`); console.log('aviso mandado no Telegram'); }
   catch (e) { console.log(`não consegui mandar no Telegram: ${e.message}`); process.exit(0); } // não grava: tenta de novo na próxima
 } else console.log('tudo certo: nada a avisar');
 
