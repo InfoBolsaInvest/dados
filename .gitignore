@@ -2,3 +2,5 @@ site/
 node_modules/
 .historico-novo
 .cotahist.zip
+.isin.json
+.cvm.zip

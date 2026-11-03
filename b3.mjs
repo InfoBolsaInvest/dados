@@ -26,10 +26,12 @@ const txt = await ultimoPregao();
 const catalogo = JSON.parse(readFileSync('site/catalogo.json', 'utf8'));
 const cotacoes = JSON.parse(readFileSync('site/cotacoes.json', 'utf8'));
 const novos = [];
+const isin = {}; // ticker -> código ISIN (o fundamentos.mjs liga os proventos da B3 ao ticker por ele)
 for (const l of txt.split(/\r?\n/)) {
   if (!l.startsWith('01') || l.slice(24, 27) !== '010') continue; // só mercado à vista
   const bdi = l.slice(10, 12);
   const tk = l.slice(12, 24).trim();
+  isin[tk] = l.slice(230, 242).trim();
   if (FORA.has(bdi) || catalogo.a[tk] || !/^[A-Z0-9]{4}\d{1,2}$/.test(tk)) continue;
   const fech = Number(l.slice(108, 121)) / 100;
   const vol = Math.round(Number(l.slice(170, 188)) / 100);
@@ -44,4 +46,5 @@ if (novos.length) {
   writeFileSync('site/catalogo.json', JSON.stringify(catalogo));
   writeFileSync('site/cotacoes.json', JSON.stringify(cotacoes));
 }
+writeFileSync('.isin.json', JSON.stringify(isin));
 console.log(`B3: ${novos.length} ativo(s) que a brapi não trouxe${novos.length ? ': ' + novos.join(' ') : ''}`);

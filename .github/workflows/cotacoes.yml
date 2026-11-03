@@ -61,6 +61,25 @@ jobs:
       - name: Nome de ativo novo que veio só com o ticker (Yahoo)
         continue-on-error: true
         run: node nomes.mjs site/longo/nomes-novos.json
+      - name: Proventos e valor patrimonial (B3, CVM e Yahoo; 1x por dia)
+        continue-on-error: true
+        env:
+          FUNDAMENTOS: ${{ github.event.inputs.historico }}
+        run: node fundamentos.mjs
+      - name: Agenda (Copom, feriados, IBGE)
+        continue-on-error: true
+        run: node calendario.mjs
+      - name: Vídeos do canal
+        continue-on-error: true
+        run: node videos.mjs
+      - name: Notícias
+        continue-on-error: true
+        run: node noticias.mjs
+      - name: Repor o que falhou com a versão publicada
+        run: |
+          for f in fundamentos isin calendario videos noticias; do
+            [ -f "site/$f.json" ] || curl -sf "https://infobolsainvest.github.io/dados/$f.json" -o "site/$f.json" || echo "sem $f.json"
+          done
       - name: Guardar o histórico novo
         if: hashFiles('.historico-novo') != ''
         uses: actions/cache/save@v4
