@@ -1,10 +1,13 @@
 // Busca a lista completa da B3 na brapi (2 consultas, cerca de 2.400 ativos) e gera os arquivos que o app lê:
 //   site/cotacoes.json  { atualizadoEm, total, q: { TICKER: [preço, variação %] } }
-//   site/catalogo.json  { versao, a: { TICKER: [nome, tipo, segmento, temLogo, volume] } }
-import { mkdirSync, writeFileSync } from 'node:fs';
+//   site/catalogo.json  { versao, a: { TICKER: [nome, tipo, segmento, temLogo (1, 0 ou ticker de onde vem o logo), volume] } }
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const MINIMO_ATIVOS = 1300; // abaixo disso a resposta veio incompleta: falha e o site continua com os dados anteriores
 const FUSO = 'America/Sao_Paulo';
+// nomes que a brapi manda só com o ticker (BDRs etc.), buscados no Yahoo por nomes.mjs
+const lerNomes = (f) => (existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : {});
+const NOMES = { ...lerNomes('nomes.json'), ...lerNomes('site/longo/nomes-novos.json') };
 
 async function buscarLista() {
   const todos = [];
@@ -97,7 +100,14 @@ function segmentoDe(it, tipo) {
 
 // ---------- geração ----------
 // tickers do mercado fracionário (PETR4F etc.) repetem o ativo normal: ficam de fora
-const lista = (await buscarLista()).filter((it) => it.stock && !/\dF$/.test(it.stock) && typeof it.close === 'number' && it.close > 0);
+// logos da brapi que não são logo (foto no lugar da marca): o app mostra o quadrado com a cor e a sigla
+const LOGO_RUIM = new Set(['FNAM11']);
+// empresa que trocou de ticker e a brapi só tem o logo no código antigo
+const LOGO_DE = { NATU3: 'NTCO3', INBR34: 'INBR32' };
+// ticker da B3: 4 letras/números e 1 ou 2 dígitos (B no fim = balcão). Fora disso é sobra da brapi (BOVA, DIVO...) ou fracionário
+const TICKER = /^[A-Z0-9]{4}\d{1,2}B?$/;
+
+const lista = (await buscarLista()).filter((it) => it.stock && TICKER.test(it.stock) && typeof it.close === 'number' && it.close > 0);
 if (lista.length < MINIMO_ATIVOS) throw new Error(`a brapi trouxe só ${lista.length} ativos`);
 
 const q = {};
@@ -105,8 +115,9 @@ const a = {};
 for (const it of lista) {
   q[it.stock] = [it.close, Math.round((it.change || 0) * 100) / 100];
   const tipo = tipoDe(it.subType, it.type);
-  const temLogo = it.logo && !it.logo.endsWith('/BRAPI.svg') ? 1 : 0;
-  a[it.stock] = [limparNome(it.name, it.stock, it.subType || ''), tipo, segmentoDe(it, tipo), temLogo, Math.round(it.volume || 0)];
+  const temLogo = LOGO_DE[it.stock] || (it.logo && !it.logo.endsWith('/BRAPI.svg') && !LOGO_RUIM.has(it.stock) ? 1 : 0);
+  const nome = limparNome(it.name, it.stock, it.subType || '');
+  a[it.stock] = [nome === it.stock && NOMES[it.stock] ? NOMES[it.stock] : nome, tipo, segmentoDe(it, tipo), temLogo, Math.round(it.volume || 0)];
 }
 
 const dia = new Intl.DateTimeFormat('en-CA', { timeZone: FUSO, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());

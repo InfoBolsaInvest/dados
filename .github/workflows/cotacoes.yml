@@ -55,6 +55,9 @@ jobs:
         env:
           HISTORICO: ${{ github.event.inputs.historico }}
         run: node yahoo.mjs
+      - name: Nome de ativo novo que veio só com o ticker (Yahoo)
+        continue-on-error: true
+        run: node nomes.mjs site/longo/nomes-novos.json
       - name: Guardar o histórico novo
         if: hashFiles('.historico-novo') != ''
         uses: actions/cache/save@v4
