@@ -193,9 +193,10 @@ if (process.env.TESTE === '1') {
 // O mesmo recado não vai duas vezes pra mesma pessoa.
 const recado = { titulo: (process.env.RECADO_TITULO || '').trim(), texto: (process.env.RECADO_TEXTO || '').trim(), link: (process.env.RECADO_LINK || '').trim(), para: process.env.RECADO_PARA || 'teste' };
 if (recado.titulo && recado.texto) {
-  // conta do dono pro teste: o e-mail de contato da empresa (público); dá pra trocar pela variável DONO_EMAIL
-  const dono = (process.env.DONO_EMAIL || 'contato@infobolsainvestimentos.com').toLowerCase();
-  const alvo = todas.filter((u) => (recado.para === 'todos' ? u.notif?.novidades !== false : dono && (u.email || '').toLowerCase() === dono));
+  // contas do dono pro teste: lista de uids em config/avisos.donos no Firestore (privado; o app não lê config)
+  const r0 = await fetch(`${FS}/config/avisos`, { headers: H });
+  const donos = new Set(r0.ok ? valor({ mapValue: { fields: (await r0.json()).fields || {} } }).donos || [] : []);
+  const alvo = todas.filter((u) => (recado.para === 'todos' ? u.notif?.novidades !== false : donos.has(u.uid)));
   const chave = `recado:${(recado.titulo + recado.texto).toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 60)}`;
   const dados = recado.link && /^https:\/\//.test(recado.link) ? { url: recado.link } : { tela: 'hoje' };
   let ok = 0, ja = 0;
