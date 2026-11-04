@@ -79,15 +79,19 @@ function guardar(lista) {
 const EVENTO = { DESDOBRAMENTO: 'desd', GRUPAMENTO: 'grup', BONIFICACAO: 'bon' };
 const ev = {};
 const codigoCvm = {}; // prefixo da empresa -> código na CVM (o eventos.mjs acha o aviso da bonificação por ele)
-function guardarEv(lista) {
+// ISIN que mudou (a ON da Azul ganhou um novo na reestruturação, e o arquivo da B3 ainda liga a AZUL3 ao antigo): pela
+// classe escrita no ISIN (OR = ON, PR = PN, PA, PB), a ação dessa classe da empresa
+const CLASSE_ISIN = { OR: '3', PR: '4', PA: '5', PB: '6' };
+const pelaClasse = (i, prefixo) => { const n = CLASSE_ISIN[String(i || '').slice(9, 11)]; return n && prefixo && cat[prefixo + n] && String(i).slice(2, 6) === prefixo ? prefixo + n : undefined; };
+function guardarEv(lista, prefixo) {
   for (const d of lista || []) {
     const tipo = EVENTO[(d.label || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()];
-    const tk = tickerDoIsin[d.isinCode] || tickerDoIsin[d.assetIssued];
+    const tk = tickerDoIsin[d.isinCode] || tickerDoIsin[d.assetIssued] || pelaClasse(d.isinCode, prefixo);
     const com = data(d.lastDatePrior), f = valor(d.factor);
     if (!tipo || !tk || !com || !(f > 0)) continue;
     const mult = tipo === 'grup' ? f : 1 + f / 100;
     if (tipo === 'grup' ? mult >= 1 : mult <= 1) continue; // proporção estranha: melhor não aplicar
-    (ev[tk] ||= []).push([com, tipo, Math.round(mult * 1e8) / 1e8, data(d.approvedOn)]);
+    (ev[tk] ||= []).push([com, tipo, Number(mult.toPrecision(10)), data(d.approvedOn)]);
   }
 }
 const fila = [
@@ -101,7 +105,7 @@ await Promise.all(Array.from({ length: 6 }, async () => {
     consultas++;
     if (!j) { falhas++; falhouB3.add(prefixo); continue; }
     guardar(Array.isArray(j) ? j[0]?.cashDividends : j.cashDividends);
-    guardarEv(Array.isArray(j) ? j[0]?.stockDividends : j.stockDividends);
+    guardarEv(Array.isArray(j) ? j[0]?.stockDividends : j.stockDividends, url.includes('CompanyCall') ? prefixo : '');
     const cvm = (Array.isArray(j) ? j[0] : j)?.codeCVM;
     if (cvm && url.includes('CompanyCall')) codigoCvm[prefixo] = String(cvm);
     await espera(100);
@@ -231,7 +235,7 @@ await Promise.all(Array.from({ length: 8 }, async () => {
         if (!(mult > 0) || Math.abs(mult - 1) < 0.001) continue;
         // a data do Yahoo é a data ex; a data com é o pregão anterior
         const com = diaUtilAntes(diaBR(new Date(x.date * 1000)));
-        e.push([com, mult < 1 ? 'grup' : mult <= 1.35 ? 'bon' : 'desd', Math.round(mult * 1e8) / 1e8]);
+        e.push([com, mult < 1 ? 'grup' : mult <= 1.35 ? 'bon' : 'desd', Number(mult.toPrecision(10))]);
       }
       evY[tk] = { d: diaBR(agora), e };
       olhadosY++;
