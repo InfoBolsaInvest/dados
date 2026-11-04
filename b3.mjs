@@ -27,12 +27,19 @@ const catalogo = JSON.parse(readFileSync('site/catalogo.json', 'utf8'));
 const cotacoes = JSON.parse(readFileSync('site/cotacoes.json', 'utf8'));
 const novos = [];
 const isin = {}; // ticker -> código ISIN (o fundamentos.mjs liga os proventos da B3 ao ticker por ele)
+// nome de pregão + especificação, como sai na nota de corretagem (ex.: "FIAGRO SUNO CI") -> tickers. O app usa quando a
+// nota não traz o código. Junta com o que já estava publicado, porque o arquivo do dia só tem o que negociou nele.
+const pregao = await fetch('https://infobolsainvest.github.io/dados/pregao.json').then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
 for (const l of txt.split(/\r?\n/)) {
   if (!l.startsWith('01') || l.slice(24, 27) !== '010') continue; // só mercado à vista
   const bdi = l.slice(10, 12);
   const tk = l.slice(12, 24).trim();
   isin[tk] = l.slice(230, 242).trim();
-  if (FORA.has(bdi) || catalogo.a[tk] || !/^[A-Z0-9]{4}\d{1,2}$/.test(tk)) continue;
+  if (FORA.has(bdi) || !/^[A-Z0-9]{4}\d{1,2}$/.test(tk)) continue;
+  // sem as marcas de "ex" da especificação (ER, EJ, ED...), que mudam de um dia para o outro
+  const nome = `${l.slice(27, 39)} ${l.slice(39, 49)}`.split(/\s+/).filter((p) => p && !/^E[A-Z]{1,2}$/.test(p)).join(' ');
+  if (nome && !(pregao[nome] || []).includes(tk)) pregao[nome] = [...(pregao[nome] || []), tk].sort();
+  if (catalogo.a[tk]) continue;
   const fech = Number(l.slice(108, 121)) / 100;
   const vol = Math.round(Number(l.slice(170, 188)) / 100);
   if (!(fech > 0)) continue;
@@ -47,4 +54,5 @@ if (novos.length) {
   writeFileSync('site/cotacoes.json', JSON.stringify(cotacoes));
 }
 writeFileSync('.isin.json', JSON.stringify(isin));
+writeFileSync('site/pregao.json', JSON.stringify(pregao));
 console.log(`B3: ${novos.length} ativo(s) que a brapi não trouxe${novos.length ? ': ' + novos.join(' ') : ''}`);

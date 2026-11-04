@@ -59,14 +59,15 @@ const ESQUEMA = {
 };
 const SISTEMA = 'Você lê notas de corretagem (nota de negociação) da bolsa brasileira, no padrão Sinacor da B3. Para cada nota do PDF, devolva:\n'
   + '- n: o Nr. nota. d: a Data pregão, em aaaa-mm-dd.\n'
-  + '- compras e vendas: os valores de "Compras à vista" e "Vendas à vista" do Resumo dos Negócios.\n'
+  + '- compras e vendas: só os valores das linhas "Compras à vista" e "Vendas à vista" do Resumo dos Negócios (opções e termo têm linhas próprias e não entram).\n'
   + '- custos: o total de custos e taxas da nota em reais (taxa de liquidação, taxa de registro, emolumentos, taxa de termo ou opções, taxa A.N.A., corretagem, ISS, impostos e outras), sem o I.R.R.F.\n'
   + '- irrf: o I.R.R.F. sobre operações (0 se não houver).\n'
   + '- ops: cada linha de "Negócios realizados" do mercado VISTA ou FRACIONARIO. cv: C ou V. esp: a especificação do título como está na nota. '
   + 'tk: o ticker (ex.: HGRU11, PETR4, BOVA11, AAPL34; no fracionário, sem o F do final). Quando a nota trouxer só o nome (ex.: PETROBRAS PN N2), deduza o ticker pelo nome e pela classe (ON = 3, PN = 4, PNA = 5, PNB = 6, UNT = 11) e marque deduzido true. '
   + 'q: a quantidade. p: o preço. vl: o valor da operação. dt: true quando a coluna Obs. tiver D (day trade).\n'
   + '- outros: true se a nota tiver operações fora do mercado à vista (opções, termo, futuro). Essas não entram em ops.\n'
-  + 'Uma nota pode ter várias folhas com o mesmo Nr. nota: junte tudo em uma só. Copie os números exatamente como estão na nota. '
+  + 'Uma nota pode ter várias folhas com o mesmo Nr. nota: junte tudo em uma só. Leia todas as linhas de todas as folhas, inclusive as repetidas: cada linha é uma operação, mesmo que seja igual à de cima. '
+  + 'Antes de responder, confira se a soma dos valores das compras bate com "Compras à vista" (e a das vendas com "Vendas à vista"); se não bater, procure a linha que faltou. Copie os números exatamente como estão na nota. '
   + 'Se o arquivo não for uma nota de corretagem, e_nota é false e notas vem vazia.';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
@@ -119,65 +120,70 @@ export default {
     if (req.method !== 'POST' || new URL(req.url).pathname !== '/nota') return resposta(404, { erro: 'nao-encontrado' });
     const uid = await usuario((req.headers.get('Authorization') || '').replace(/^Bearer /, '')).catch(() => null);
     if (!uid) return resposta(401, { erro: 'login' });
-    const tamanho = Number(req.headers.get('Content-Length'));
-    if (!(tamanho > 100)) return resposta(400, { erro: 'vazio' });
-    if (tamanho > MAX_BYTES) return resposta(413, { erro: 'grande' });
-
-    // limite do dia (horário de Brasília)
-    const dia = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
-    const chaveDia = `nota:${uid}:${dia}`;
-    const usados = Number(await env.LIMITE.get(chaveDia)) || 0;
-    if (usados >= POR_DIA) return resposta(429, { erro: 'limite' });
-    await env.LIMITE.put(chaveDia, String(usados + 1), { expirationTtl: 2 * 86400 });
-
-    // o pedido para a API: o PDF entra no meio, em fluxo
-    const MARCA = '@@PDF@@';
-    const modelo = JSON.stringify({
-      model: 'claude-haiku-5-5',
-      max_tokens: 32000,
-      system: SISTEMA,
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: ESQUEMA } },
-      messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: MARCA } }, { type: 'text', text: 'Leia as notas deste PDF.' }] }],
-    });
-    const [antes, depois] = modelo.split(MARCA).map((t) => new TextEncoder().encode(t));
-    const { readable, writable } = new FixedLengthStream(antes.length + tamanho + depois.length);
-    let sujo = false;
-    const dec = new TextDecoder();
-    (async () => {
-      const w = writable.getWriter();
-      await w.write(antes);
-      const r = req.body.getReader();
-      for (;;) {
-        const { done, value } = await r.read();
-        if (done) break;
-        const t = dec.decode(value, { stream: true });
-        if (t.includes('"') || t.includes('\\')) { sujo = true; await w.abort('arquivo inválido'); return; }
-        await w.write(value);
-      }
-      await w.write(depois);
-      await w.close();
-    })().catch(() => {});
-
-    let api;
-    try {
-      api = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': env.ANTHROPIC_NOTAS_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: readable,
-      });
-    } catch {
-      return resposta(sujo ? 400 : 502, { erro: sujo ? 'arquivo' : 'ia' });
-    }
-    if (!api.ok) {
-      const detalhe = (await api.text()).slice(0, 400);
-      // PDF com senha ou páginas demais: a API recusa com 400
-      const erro = api.status === 400 && /password|encrypt/i.test(detalhe) ? 'senha' : api.status === 400 && /page/i.test(detalhe) ? 'paginas' : api.status === 400 ? 'pdf' : 'ia';
-      return resposta(502, { erro, status: api.status, detalhe: detalhe.slice(0, 300) });
-    }
-    const r = await api.json();
-    if (r.stop_reason !== 'end_turn') return resposta(502, { erro: r.stop_reason === 'max_tokens' ? 'paginas' : 'ia', parou: r.stop_reason });
-    let j;
-    try { j = JSON.parse(r.content.find((b) => b.type === 'text')?.text || '{}'); } catch { return resposta(502, { erro: 'ia' }); }
-    return resposta(200, { e_nota: !!j.e_nota, notas: j.e_nota ? normalizar(j.notas) : [], uso: { ent: r.usage?.input_tokens, sai: r.usage?.output_tokens } });
+    return lerNota(req, env, uid);
   },
 };
+
+// separado do login para dar para testar (teste.js, só no wrangler dev)
+export async function lerNota(req, env, uid) {
+  const tamanho = Number(req.headers.get('Content-Length'));
+  if (!(tamanho > 100)) return resposta(400, { erro: 'vazio' });
+  if (tamanho > MAX_BYTES) return resposta(413, { erro: 'grande' });
+
+  // limite do dia (horário de Brasília)
+  const dia = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
+  const chaveDia = `nota:${uid}:${dia}`;
+  const usados = Number(await env.LIMITE.get(chaveDia)) || 0;
+  if (usados >= POR_DIA) return resposta(429, { erro: 'limite' });
+  await env.LIMITE.put(chaveDia, String(usados + 1), { expirationTtl: 2 * 86400 });
+
+  // o pedido para a API: o PDF entra no meio, em fluxo
+  const MARCA = '@@PDF@@';
+  const modelo = JSON.stringify({
+    model: 'claude-haiku-5-5',
+    max_tokens: 32000,
+    system: SISTEMA,
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: ESQUEMA } },
+    messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: MARCA } }, { type: 'text', text: 'Leia as notas deste PDF.' }] }],
+  });
+  const [antes, depois] = modelo.split(MARCA).map((t) => new TextEncoder().encode(t));
+  const { readable, writable } = new FixedLengthStream(antes.length + tamanho + depois.length);
+  let sujo = false;
+  const dec = new TextDecoder();
+  (async () => {
+    const w = writable.getWriter();
+    await w.write(antes);
+    const r = req.body.getReader();
+    for (;;) {
+      const { done, value } = await r.read();
+      if (done) break;
+      const t = dec.decode(value, { stream: true });
+      if (t.includes('"') || t.includes('\\')) { sujo = true; await w.abort('arquivo inválido'); return; }
+      await w.write(value);
+    }
+    await w.write(depois);
+    await w.close();
+  })().catch(() => {});
+
+  let api;
+  try {
+    api = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'x-api-key': env.ANTHROPIC_NOTAS_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+      body: readable,
+    });
+  } catch {
+    return resposta(sujo ? 400 : 502, { erro: sujo ? 'arquivo' : 'ia' });
+  }
+  if (!api.ok) {
+    const detalhe = (await api.text()).slice(0, 400);
+    // PDF com senha ou páginas demais: a API recusa com 400
+    const erro = api.status === 400 && /password|encrypt/i.test(detalhe) ? 'senha' : api.status === 400 && /page/i.test(detalhe) ? 'paginas' : api.status === 400 ? 'pdf' : 'ia';
+    return resposta(502, { erro, status: api.status, detalhe: detalhe.slice(0, 300) });
+  }
+  const r = await api.json();
+  if (r.stop_reason !== 'end_turn') return resposta(502, { erro: r.stop_reason === 'max_tokens' ? 'paginas' : 'ia', parou: r.stop_reason });
+  let j;
+  try { j = JSON.parse(r.content.find((b) => b.type === 'text')?.text || '{}'); } catch { return resposta(502, { erro: 'ia' }); }
+  return resposta(200, { e_nota: !!j.e_nota, notas: j.e_nota ? normalizar(j.notas) : [], uso: { ent: r.usage?.input_tokens, sai: r.usage?.output_tokens } });
+}

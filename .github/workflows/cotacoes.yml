@@ -166,7 +166,7 @@ jobs:
       - name: Repor o que falhou com a versão publicada
         id: repor
         run: |
-          for f in mercado fundamentos isin calendario videos noticias rendafixa resumo; do
+          for f in mercado fundamentos isin calendario videos noticias rendafixa resumo pregao; do
             [ -f "site/$f.json" ] || curl -sf "https://infobolsainvest.github.io/dados/$f.json" -o "site/$f.json" || echo "sem $f.json"
           done
       - name: Avisos no celular
