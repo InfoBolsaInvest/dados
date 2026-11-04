@@ -29,6 +29,8 @@ const ESQUEMA = {
           vendas: NUM,
           custos: NUM,
           irrf: NUM,
+          liquido: NUM,
+          dc: { type: 'string', enum: ['D', 'C'] },
           outros: { type: 'boolean' },
           ops: {
             type: 'array',
@@ -43,13 +45,14 @@ const ESQUEMA = {
                 p: NUM,
                 vl: NUM,
                 dt: { type: 'boolean' },
+                ex: { type: 'boolean' },
               },
-              required: ['cv', 'esp', 'tk', 'deduzido', 'q', 'p', 'vl', 'dt'],
+              required: ['cv', 'esp', 'tk', 'deduzido', 'q', 'p', 'vl', 'dt', 'ex'],
               additionalProperties: false,
             },
           },
         },
-        required: ['n', 'd', 'compras', 'vendas', 'custos', 'irrf', 'outros', 'ops'],
+        required: ['n', 'd', 'compras', 'vendas', 'custos', 'irrf', 'liquido', 'dc', 'outros', 'ops'],
         additionalProperties: false,
       },
     },
@@ -62,10 +65,12 @@ const SISTEMA = 'Você lê notas de corretagem (nota de negociação) da bolsa b
   + '- compras e vendas: só os valores das linhas "Compras à vista" e "Vendas à vista" do Resumo dos Negócios (opções e termo têm linhas próprias e não entram).\n'
   + '- custos: o total de custos e taxas da nota em reais (taxa de liquidação, taxa de registro, emolumentos, taxa de termo ou opções, taxa A.N.A., corretagem, ISS, impostos e outras), sem o I.R.R.F.\n'
   + '- irrf: o I.R.R.F. sobre operações (0 se não houver).\n'
-  + '- ops: cada linha de "Negócios realizados" do mercado VISTA ou FRACIONARIO. cv: C ou V. esp: a especificação do título como está na nota. '
+  + '- liquido e dc: o valor do "Líquido para" (com a data) e a letra ao lado dele: D quando a pessoa paga, C quando recebe.\n'
+  + '- ops: cada linha de "Negócios realizados" do mercado VISTA, FRACIONARIO ou de exercício de opção (EXERC OPC COMPRA, EXERC OPC VENDA). cv: C ou V, como está na linha. esp: a especificação do título como está na nota. '
   + 'tk: o ticker (ex.: HGRU11, PETR4, BOVA11, AAPL34; no fracionário, sem o F do final). Quando a nota trouxer só o nome (ex.: PETROBRAS PN N2), deduza o ticker pelo nome e pela classe (ON = 3, PN = 4, PNA = 5, PNB = 6, UNT = 11) e marque deduzido true. '
+  + 'No exercício de opção, a linha é a compra ou a venda da ação pelo preço de exercício: tk é o ticker da ação (as 4 letras do código da opção mais o número da classe; ex.: PETRK319E PN = PETR4, CSANX59E ON = CSAN3, BRKMR820E PNA = BRKM5), deduzido true e ex true. Nas outras linhas, ex false. '
   + 'q: a quantidade. p: o preço. vl: o valor da operação. dt: true quando a coluna Obs. tiver D (day trade).\n'
-  + '- outros: true se a nota tiver operações fora do mercado à vista (opções, termo, futuro). Essas não entram em ops.\n'
+  + '- outros: true se a nota tiver operações com opções (compra ou venda da opção, não o exercício), termo ou futuro. Essas não entram em ops.\n'
   + 'Uma nota pode ter várias folhas com o mesmo Nr. nota: junte tudo em uma só. Leia todas as linhas de todas as folhas, inclusive as repetidas: cada linha é uma operação, mesmo que seja igual à de cima. '
   + 'Antes de responder, confira se a soma dos valores das compras bate com "Compras à vista" (e a das vendas com "Vendas à vista"); se não bater, procure a linha que faltou. Copie os números exatamente como estão na nota. '
   + 'Se o arquivo não for uma nota de corretagem, e_nota é false e notas vem vazia.';
@@ -103,13 +108,13 @@ const normalizar = (notas) => (notas || [])
   .map((x) => ({
     n: String(x.n || '').replace(/\D/g, ''),
     d: /^\d{4}-\d{2}-\d{2}$/.test(x.d) ? x.d : '',
-    compras: cent(x.compras), vendas: cent(x.vendas), custos: cent(x.custos), irrf: cent(x.irrf), outros: !!x.outros,
+    compras: cent(x.compras), vendas: cent(x.vendas), custos: cent(x.custos), irrf: cent(x.irrf), liquido: cent(x.liquido), dc: x.dc === 'C' ? 'C' : 'D', outros: !!x.outros,
     ops: (x.ops || []).map((o) => ({
       cv: o.cv === 'V' ? 'V' : 'C',
       esp: String(o.esp || '').slice(0, 60),
       tk: String(o.tk || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z0-9]{4}\d{1,2})F$/, '$1'),
       deduzido: !!o.deduzido,
-      q: Math.round(Number(o.q) || 0), p: Number(o.p) || 0, vl: cent(o.vl), dt: !!o.dt,
+      q: Math.round(Number(o.q) || 0), p: Number(o.p) || 0, vl: cent(o.vl), dt: !!o.dt, ex: !!o.ex,
     })).filter((o) => o.q > 0),
   }))
   .filter((x) => x.n && x.d);
