@@ -4,7 +4,7 @@
 // com o Claude Haiku, devolve em res (JSON: [{ tk, q, p, duvida }]) com status 'pronto' (ou 'erro' e o motivo em
 // msg) e apaga as partes da imagem.
 // O app escuta o documento e mostra a conferência; nada é salvo na carteira sem a pessoa conferir.
-// Travas de custo: até 10 prints por pessoa por dia e 30 por rodada. Leituras com mais de 2 dias são apagadas.
+// Travas de custo: até 30 prints por pessoa por dia e 60 por rodada. Leituras com mais de 2 dias são apagadas.
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
@@ -13,7 +13,7 @@ const TOKEN = process.env.GOOGLE_TOKEN;
 if (!TOKEN) { console.log('sem GOOGLE_TOKEN: pulei os prints'); process.exit(0); }
 const BASE = `https://firestore.googleapis.com/v1/projects/${PROJETO}/databases/(default)/documents`;
 const H = { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
-const POR_DIA = 10, POR_RODADA = 30;
+const POR_DIA = 30, POR_RODADA = 60;
 const hoje = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 10);
 
 const valor = (v) => (v?.stringValue ?? v?.integerValue ?? v?.timestampValue ?? v?.booleanValue ?? null);
