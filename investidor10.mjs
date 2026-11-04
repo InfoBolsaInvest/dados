@@ -45,13 +45,18 @@ async function telegram(texto) {
 async function avisarDonos(titulo, texto) {
   const r = await fetch(`${FS}/config/avisos`, { headers: H });
   const donos = r.ok ? valor({ mapValue: { fields: (await r.json()).fields || {} } }).donos || [] : [];
-  for (const uid of donos) {
+  await avisarContas(donos, titulo, texto, 'perfil');
+}
+
+// push pro celular registrado em cada conta (usuarios/{uid}.push)
+async function avisarContas(uids, titulo, texto, tela) {
+  for (const uid of uids) {
     const u = await fetch(`${FS}/usuarios/${uid}`, { headers: H });
     const token = u.ok ? valor({ mapValue: { fields: (await u.json()).fields || {} } }).push?.token : null;
     if (!token) continue;
     await fetch(`https://fcm.googleapis.com/v1/projects/${PROJETO}/messages:send`, {
       method: 'POST', headers: H,
-      body: JSON.stringify({ message: { token, notification: { title: titulo, body: texto }, data: { tela: 'perfil' }, android: { priority: 'high', notification: { channel_id: 'avisos', color: '#FFB400' } } } }),
+      body: JSON.stringify({ message: { token, notification: { title: titulo, body: texto }, data: { tela }, android: { priority: 'high', notification: { channel_id: 'avisos', color: '#FFB400' } } } }),
     }).catch(() => {});
   }
 }
@@ -140,7 +145,11 @@ for (const c of carteiras) {
       campos.atualizadoEm = { timestampValue: new Date().toISOString() };
     }
     await salvar(campos);
-    if (mud.length) await avisarDonos(`Carteira de ${nome} atualizada`, mud.slice(0, 6).join('\n') + (mud.length > 6 ? `\ne mais ${mud.length - 6}` : ''));
+    if (mud.length) {
+      await avisarDonos(`Carteira de ${nome} atualizada`, mud.slice(0, 6).join('\n') + (mud.length > 6 ? `\ne mais ${mud.length - 6}` : ''));
+      // o cliente também fica sabendo (o app põe as posições novas no Meus ativos dele)
+      if (c.habilitada) await avisarContas([c.uid], 'Sua carteira foi atualizada', 'A InfoBolsa atualizou as posições da sua carteira. Toque pra ver em Meus ativos.', 'ativos');
+    }
     console.log(`carteira ${c.uid.slice(0, 6)}…: ${mud.length ? `${mud.length} mudança(s)` : 'sem mudança'}${fora.length ? `, ${fora.length} fora do catálogo` : ''}`);
   } catch (e) {
     falhas++;
