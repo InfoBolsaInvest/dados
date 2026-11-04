@@ -145,8 +145,14 @@ async function rendaFixa(id, hash) {
   const rf = [];
   const fora = [];
   const entendido = []; // nome no Investidor10 → como o robô entendeu (vai pra conferência da IA)
-  // Tesouro: quantidade atual de cada título, montada a partir das compras mais recentes
+  // Tesouro: quantidade atual de cada título, montada a partir das compras mais recentes (o mesmo título em
+  // duas posições é somado antes, pelo mesmo motivo da renda fixa abaixo)
+  const titulos = new Map();
   for (const p of tesPos) {
+    const ja = titulos.get(semAcento(p.ticker));
+    if (ja) ja.quantity = String(Number(ja.quantity) + Number(p.quantity)); else titulos.set(semAcento(p.ticker), { ...p });
+  }
+  for (const p of titulos.values()) {
     const q = Number(p.quantity);
     if (!(q > 0)) continue;
     const compras = tesLanc.filter((x) => x.type === 'Compra' && semAcento(x.ticker) === semAcento(p.ticker));
@@ -161,8 +167,15 @@ async function rendaFixa(id, hash) {
       rf.push({ id: `cart-${t.id}-${dia}-${x.id}`, produto: 'Tesouro', nome: t.nome, ind: indDoTipo(t.tipo), taxa: taxaNoDia(t.id, dia), valor: Math.round(qtd * Number(x.price_raw) * 100) / 100, data: dia, venc: t.venc, isento: false, titulo: t.id, qtd });
     }
   }
-  // CDB, LCI, LCA...: valor aplicado atual, montado a partir das aplicações mais recentes
+  // CDB, LCI, LCA...: valor aplicado atual, montado a partir das aplicações mais recentes. Posições com o mesmo
+  // nome (o Investidor10 às vezes separa o mesmo CDB em duas) são juntadas antes, senão as mesmas aplicações
+  // entrariam duas vezes
+  const porNome = new Map();
   for (const p of fixPos) {
+    const ja = porNome.get(p.ticker);
+    if (ja) ja.applied = String(Number(ja.applied) + Number(p.applied)); else porNome.set(p.ticker, { ...p });
+  }
+  for (const p of porNome.values()) {
     const aplicado = Number(p.applied);
     if (!(aplicado > 0)) continue;
     const compras = fixLanc.filter((x) => x.type === 'Compra' && x.ticker === p.ticker);
