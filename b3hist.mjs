@@ -46,8 +46,11 @@ async function baixar(ano) {
   }
 }
 
-// lê um ano do arquivo da B3, linha a linha (o arquivo aberto passa de 500 MB): só mercado à vista
-async function lerAno(ano, aoLer) {
+// lê um ano do arquivo da B3, linha a linha (o arquivo aberto passa de 500 MB): só mercado à vista. nomes junta o nome de
+// pregão + especificação de cada ticker daquele ano (como sai na nota de corretagem): nota antiga traz só o nome, e
+// fundo que mudou de nome ou saiu da bolsa só aparece nos anos em que negociou
+const FORA_NOMES = new Set(['10', '22']); // direitos e recibos de subscrição (o b3.mjs tira os mesmos)
+async function lerAno(ano, aoLer, nomes = null) {
   await baixar(ano);
   const unzip = spawn('unzip', ['-p', '.cotahist-ano.zip']);
   const fim = new Promise((ok) => unzip.on('close', ok));
@@ -55,6 +58,10 @@ async function lerAno(ano, aoLer) {
   for await (const l of linhas) {
     if (!l.startsWith('01') || l.slice(24, 27) !== '010') continue;
     const tk = l.slice(12, 24).trim();
+    if (nomes && !FORA_NOMES.has(l.slice(10, 12)) && /^[A-Z0-9]{4}\d{1,2}$/.test(tk)) {
+      const nome = `${l.slice(27, 39)} ${l.slice(39, 49)}`.split(/\s+/).filter((p) => p && !/^E[A-Z]{1,2}$/.test(p)).join(' ');
+      if (nome && !(nomes[nome] || []).includes(tk)) nomes[nome] = [...(nomes[nome] || []), tk];
+    }
     if (!cat[tk]) continue;
     const d = `${l.slice(2, 6)}-${l.slice(6, 8)}-${l.slice(8, 10)}`;
     const c = preco(l.slice(108, 121));
@@ -80,21 +87,33 @@ function semanal(diario) {
 const anoAtual = Number(hoje.slice(0, 4));
 // anos passados: uma vez só (semanal de todos e o diário dos últimos 100 dias do ano anterior, para janeiro a março)
 for (let ano = anoAtual - 5; ano < anoAtual; ano++) {
-  const arq = `cache-b3/${ano}.json`;
-  if (existsSync(arq)) continue;
-  const diario = {};
-  await lerAno(ano, (tk, d, v) => { (diario[tk] ||= []).push([d, ...v]); });
-  const resumo = {};
-  for (const [tk, l] of Object.entries(diario)) {
-    l.sort((a, b) => (a[0] < b[0] ? -1 : 1));
-    resumo[tk] = { s: semanal(l), d: ano === anoAtual - 1 ? l.slice(-100) : [] };
+  const arq = `cache-b3/${ano}.json`, arqNomes = `cache-b3/nomes-${ano}.json`;
+  if (existsSync(arq) && existsSync(arqNomes)) continue;
+  const diario = {}, nomes = {};
+  await lerAno(ano, (tk, d, v) => { (diario[tk] ||= []).push([d, ...v]); }, nomes);
+  if (!existsSync(arq)) {
+    const resumo = {};
+    for (const [tk, l] of Object.entries(diario)) {
+      l.sort((a, b) => (a[0] < b[0] ? -1 : 1));
+      resumo[tk] = { s: semanal(l), d: ano === anoAtual - 1 ? l.slice(-100) : [] };
+    }
+    writeFileSync(arq, JSON.stringify(resumo));
+    console.log(`B3 ${ano}: ${Object.keys(resumo).length} ativos guardados`);
   }
-  writeFileSync(arq, JSON.stringify(resumo));
+  writeFileSync(arqNomes, JSON.stringify(nomes));
   writeFileSync('.b3anos-novo', '1'); // guarda no cache do Actions
-  console.log(`B3 ${ano}: ${Object.keys(resumo).length} ativos guardados`);
 }
-const atual = {};
-await lerAno(anoAtual, (tk, d, v) => { (atual[tk] ||= []).push([d, ...v]); });
+const atual = {}, nomesAtual = {};
+await lerAno(anoAtual, (tk, d, v) => { (atual[tk] ||= []).push([d, ...v]); }, nomesAtual);
+// nomes de pregão de todos os anos no pregao.json (o b3.mjs junta os do dia a cada rodada e mantém os de antes)
+{
+  const pregao = existsSync('site/pregao.json') ? JSON.parse(readFileSync('site/pregao.json', 'utf8')) : {};
+  const juntar = (m) => { for (const [nome, tks] of Object.entries(m)) pregao[nome] = [...new Set([...(pregao[nome] || []), ...tks])].sort(); };
+  for (let ano = anoAtual - 5; ano < anoAtual; ano++) if (existsSync(`cache-b3/nomes-${ano}.json`)) juntar(JSON.parse(readFileSync(`cache-b3/nomes-${ano}.json`, 'utf8')));
+  juntar(nomesAtual);
+  writeFileSync('site/pregao.json', JSON.stringify(pregao));
+  console.log(`nomes de pregão desde ${anoAtual - 5}: ${Object.keys(pregao).length}`);
+}
 const passados = [];
 for (let ano = anoAtual - 5; ano < anoAtual; ano++) passados.push(JSON.parse(readFileSync(`cache-b3/${ano}.json`, 'utf8')));
 const anterior = passados[passados.length - 1] || {};

@@ -54,7 +54,11 @@ function limparNome(nome, tk, sub) {
     /FUNDO DE INVESTIMENTO (NAS CADEIAS PRODUTIVAS DO AGRONEG[OÓ]CIO|IMOBILI[AÁ]RIO)/g,
     /FUNDO DE [IÍ]NDICE/g,
     /CLASSE DE [IÍ]NDICE/g,
-    /RESPONSABILIDADE LIMITADA/g,
+    // a brapi corta o nome em 60 letras: "RESPONSABILIDADE LIMI", "RESPONSABILI", "RESPONSABILIADADE"
+    /\b(DE\s+)?RESPONSAB\w*(\s+LIMI\w*)?/g,
+    /\bEM COTAS DE CLASSES DE [IÍ]NDICE\b/g,
+    /\bINVESTIMENTO NO EXTERIOR\b/g,
+    /(\s-)?\s+IE$/g, // "investimento no exterior", abreviado no fim
     /\b(FII|FIAGRO|FI-AGRO|FIP|FIDC|ETF)\b/g,
     /\bS\.?\/?A\.?(?=\s|$|-)/g,
     /\bHOLDING\b/g,
@@ -66,7 +70,8 @@ function limparNome(nome, tk, sub) {
   n = n.replace(/\s*[-.]\s*$/g, '').replace(/^\s*[-.]\s*/g, '').replace(/\s+-\s+-\s+/g, ' - ').replace(/\s+/g, ' ').trim();
   n = n.replace(/(\s-)+$/g, '').trim();
   if (!n) return tk;
-  let t = titulo(n);
+  // algarismo romano fica em maiúsculas (Fundo II, não Fundo Ii)
+  let t = titulo(n).replace(/\b(Ii|Iii|Iv|Vi|Vii|Viii|Ix|Xi|Xii)\b/g, (r) => r.toUpperCase());
   if (sub === 'stock' || sub === 'unit') {
     const classe = tk.endsWith('11') ? 'Unit' : tk.endsWith('3') ? 'ON' : tk.endsWith('4') ? 'PN' : tk.endsWith('5') ? 'PNA' : tk.endsWith('6') ? 'PNB' : '';
     if (classe) t = `${t} ${classe}`;

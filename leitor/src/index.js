@@ -169,7 +169,7 @@ export async function lerNota(req, env, uid) {
   const MARCA = '@@PDF@@';
   const modelo = JSON.stringify({
     model: 'claude-haiku-5-5',
-    max_tokens: 32000,
+    max_tokens: 64000, // 15 páginas de nota cheia de linhas passam de 32 mil (com o raciocínio do modelo)
     system: SISTEMA,
     output_config: { effort: 'low', format: { type: 'json_schema', schema: ESQUEMA } },
     messages: [{ role: 'user', content: [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: MARCA } }, { type: 'text', text: 'Leia as notas deste PDF.' }] }],
