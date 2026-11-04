@@ -2,7 +2,8 @@
 //   proventos: B3 (dados oficiais de cada empresa e fundo: valor, data com e data de pagamento)
 //   valor patrimonial por cota dos fundos imobiliários: informe mensal da CVM (dados abertos)
 //   valor patrimonial por ação: Yahoo Finanças (não oficial)
-// Gera site/fundamentos.json { atualizadoEm, a: { TICKER: { p: [[data com, pagamento, valor, tipo], ...], vp } } }
+// Gera site/fundamentos.json { atualizadoEm, a: { TICKER: { p: [[data com, pagamento, valor, tipo, aprovado em], ...], vp, e } } }
+// (e: desdobramento, grupamento e bonificação, ver guardarEv)
 // Precisa do .isin.json do b3.mjs e do site/catalogo.json do atualizar.mjs.
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -66,7 +67,7 @@ function guardar(lista) {
     const com = data(d.lastDatePrior), pag = data(d.paymentDate), v = valor(d.rate);
     if (!tk || !com || !(v > 0) || com < limite) continue;
     const tipo = TIPO[(d.label || '').toUpperCase()] || (d.label || '').trim();
-    (prov[tk] ||= []).push([com, pag, Math.round(v * 1e8) / 1e8, tipo]);
+    (prov[tk] ||= []).push([com, pag, Math.round(v * 1e8) / 1e8, tipo, data(d.approvedOn)]); // o 5º campo (aprovado em) é para o aviso de anúncio
   }
 }
 // desdobramento, grupamento e bonificação: [data com, tipo, multiplicador da quantidade, aprovado em]. Guarda tudo

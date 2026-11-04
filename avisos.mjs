@@ -159,6 +159,40 @@ function avisosDe(u, ja, primeira) {
       }
     }
   }
+  // provento ou evento que acabou de aparecer na B3 (aprovado nos últimos 5 dias). A B3 só lista depois da data com,
+  // então o aviso é de que saiu: o provento, com o dia de pagamento; o desdobramento, grupamento ou bonificação, com o
+  // que mudou. O toque abre o ativo, que mostra a explicação e a quantidade já ajustada.
+  if (n.proventos !== false && minutos >= 10 * 60) {
+    const cincoDias = new Date(brt.getTime() - 5 * 86400000).toISOString().slice(0, 10);
+    const semana = new Date(brt.getTime() - 7 * 86400000).toISOString().slice(0, 10);
+    const num = (v) => String(Math.round(v * 100) / 100).replace('.', ',');
+    // a proporção em números pequenos: 1,5 vira "cada 2 viraram 3"
+    const prop = (f) => { for (let k = 1; k <= 100; k++) if (Math.abs(k * f - Math.round(k * f)) < 1e-6) return [k, Math.round(k * f)]; return [1, f]; };
+    for (const tk of watch) {
+      const un = tk.endsWith('11') ? 'cota' : 'ação';
+      const uns = un === 'cota' ? 'cotas' : 'ações';
+      const q = qtd[tk] > 0 ? qtd[tk] : 0;
+      const anunciados = new Map();
+      for (const [com, pag, v, , aprov] of fundamentos[tk]?.p || []) {
+        if (!aprov || aprov < cincoDias || (pag && pag < hoje)) continue;
+        const k = `${com}|${pag}`;
+        const x = anunciados.get(k);
+        if (x) x.v += v; else anunciados.set(k, { com, pag, v });
+      }
+      for (const { com, pag, v } of anunciados.values()) {
+        add(`anun:${tk}:${com}:${pag}`, `${tk} vai pagar provento`, `${provTxt(v)} por ${un} para quem tinha ${tk} em ${dataCurta(com)}${pag ? `, pago em ${dataCurta(pag)}` : ''}` + (q ? `. Com as suas ${q} ${uns}: ${reais(v * q)}.` : '.'), { tk });
+      }
+      for (const [com, tipo, f, aprov] of fundamentos[tk]?.e || []) {
+        if (!aprov || aprov < cincoDias || com < semana) continue;
+        const [de, para] = prop(f);
+        const titulo = `${tk} teve ${tipo === 'desd' ? 'desdobramento' : tipo === 'grup' ? 'grupamento' : 'bonificação'}`;
+        const texto = tipo === 'bon'
+          ? `${num((f - 1) * 100)}% em ${uns} novas para quem tinha ${tk} em ${dataCurta(com)}.`
+          : `Cada ${de === 1 ? un : `${de} ${uns}`} ${de === 1 ? 'virou' : 'viraram'} ${num(para)} (data com ${dataCurta(com)}).`;
+        add(`ev:${tk}:${com}:${tipo}`, titulo, `${texto} Toque para ver como ficou a sua quantidade e o preço médio.`, { tk });
+      }
+    }
+  }
   // fechamento: rodada das 18h30, só em dia de pregão (a B3 fecha às 17h ou às 18h, conforme o horário de verão
   // dos EUA, e a cotação pode ter até 30 min de atraso)
   if (n.fechamento !== false && minutos >= 18 * 60 + 30 && pregaoHoje && mercado.ibov) {
