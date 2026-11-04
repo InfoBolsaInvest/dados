@@ -32,6 +32,7 @@ const NOMES = {
   repor: 'Reposição dos arquivos',
   avisos: 'Avisos no celular',
   i10: 'Carteiras dos clientes (Investidor10)',
+  prints: 'Leitura dos prints da corretora',
   publicar: 'Publicação do site',
 };
 
