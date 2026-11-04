@@ -4,7 +4,7 @@
 // O link público não pede senha: é o próprio cliente que deixa a carteira visível e manda o link.
 // Travas: leitura que falha, que vem vazia ou que "perde" mais da metade da carteira de uma vez não mexe em nada
 // (provável instabilidade do site) e avisa no Telegram. Quando muda algo, avisa o dono no celular.
-// I10=1 roda na hora, fora do horário.
+// I10=1 roda na hora, fora do horário (I10=2 também força a conferência da IA).
 import { readFileSync } from 'node:fs';
 
 const PROJETO = 'infobolsa-investimentos';
@@ -18,7 +18,7 @@ const TIPOS = ['Ticker', 'Fii', 'Etf', 'Bdr']; // ações, FIIs (e Fiagro), ETFs
 const brt = new Date(Date.now() - 3 * 3600 * 1000);
 const hoje = brt.toISOString().slice(0, 10);
 const minutos = brt.getUTCHours() * 60 + brt.getUTCMinutes();
-const forcar = process.env.I10 === '1';
+const forcar = ['1', '2'].includes(process.env.I10); // 2 = também roda a conferência da IA mesmo sem mudança (teste)
 if (!forcar && minutos < 18 * 60) { console.log('carteiras do Investidor10: só depois das 18h'); process.exit(0); }
 
 const catalogo = JSON.parse(readFileSync('site/catalogo.json', 'utf8')).a;
@@ -284,7 +284,8 @@ for (const c of carteiras) {
       campos.atualizadoEm = { timestampValue: new Date().toISOString() };
     }
     // conferência pela IA (só quando mudou algo): avisa se algum item parece mal entendido; não muda nada
-    const duvidas = mud.length ? await conferir(entendido, fora, rfFora) : [];
+    const duvidas = mud.length || process.env.I10 === '2' ? await conferir(entendido, fora, rfFora) : [];
+    console.log(`conferência: ${duvidas.length ? duvidas.join(' | ') : 'nada a apontar'}`);
     if (duvidas.length) {
       campos.i10Msg.stringValue += ` Conferir: ${duvidas.join('; ')}`;
       await telegram(`Carteira de ${nome}: a conferência achou ${duvidas.length === 1 ? 'um item' : 'itens'} pra olhar no painel:\n${duvidas.map((d) => `• ${d}`).join('\n')}`);
