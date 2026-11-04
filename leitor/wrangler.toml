@@ -1,5 +1,5 @@
-# Leitor de prints da corretora (Cloudflare Worker). Publicar: npx wrangler deploy (nesta pasta).
-# Segredo ANTHROPIC_API_KEY: colocado pelo dono no painel do Cloudflare (Worker > Configurações > Variáveis).
+# Leitor de notas de corretagem (Cloudflare Worker). Publicar: npx wrangler deploy (nesta pasta).
+# Segredo ANTHROPIC_NOTAS_KEY (chave "cloudflare-notas" da Anthropic): colado pelo dono com npx wrangler secret put.
 name = "infobolsa-leitor"
 main = "src/index.js"
 compatibility_date = "2026-10-01"

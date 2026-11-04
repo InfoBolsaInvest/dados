@@ -50,10 +50,6 @@ on:
         description: 'Refazer agora o resumo do fechamento com IA (1 = sim)'
         required: false
         default: ''
-      prints:
-        description: 'Testar a leitura de print com IA no print de exemplo (1 = sim)'
-        required: false
-        default: ''
       relogio:
         description: 'Só para o despertador externo (cron-job.org), que dispara a cada 15 minutos. Deixe em branco.'
         required: false
@@ -185,14 +181,12 @@ jobs:
           RECADO_LINK: ${{ github.event.inputs.recado_link }}
           RECADO_PARA: ${{ github.event.inputs.recado_para }}
         run: node avisos.mjs
-      - name: Leitura dos prints da corretora (Claude Haiku; só quando alguém mandou)
+      - name: Limpeza do que sobrou da leitura de print (saiu do app em 04/11)
         id: prints
         if: steps.google.outcome == 'success'
         continue-on-error: true
         env:
           GOOGLE_TOKEN: ${{ steps.google.outputs.access_token }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          PRINTS: ${{ github.event.inputs.prints }}
         run: node prints.mjs
       - name: Carteiras dos clientes no Investidor10 (1x por dia, depois das 18h)
         id: i10

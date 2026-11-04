@@ -21,7 +21,7 @@
 <body>
 <main>
 <h1>Política de privacidade do app InfoBolsa Investimentos</h1>
-<p class="mu">Atualizada em 3 de novembro de 2026</p>
+<p class="mu">Atualizada em 4 de novembro de 2026</p>
 
 <p>Esta política explica quais dados o app InfoBolsa Investimentos usa, para quê, com quem eles ficam e como você pode apagar tudo. Ela segue a Lei Geral de Proteção de Dados (LGPD, Lei 13.709/2018).</p>
 
@@ -36,13 +36,16 @@
 <p>A conta serve para não perder nada ao trocar de celular e para receber avisos. Com ela, guardamos:</p>
 <ul>
   <li><strong>Dados de cadastro:</strong> nome e e-mail. Se você entrar com o Google, recebemos também a foto do seu perfil Google, que só é mostrada na tela do app e não fica guardada por nós.</li>
-  <li><strong>O que você monta no app:</strong> ativos do radar, quantidades, preço médio, alertas de preço, investimentos de renda fixa, ajustes de notificação, aparência e se você se considera iniciante ou experiente.</li>
+  <li><strong>O que você monta no app:</strong> ativos do radar, quantidades, preço médio, as compras e vendas das notas de corretagem que você importar (data, número da nota, ativo, quantidade, preço e taxas), alertas de preço, investimentos de renda fixa, ajustes de notificação, aparência e se você se considera iniciante ou experiente.</li>
   <li><strong>Endereço de notificação do celular:</strong> um código gerado pelo Google que permite mandar avisos para o seu aparelho, junto com o sistema (Android) e a data do registro. Quando você sai da conta, esse código é apagado.</li>
   <li><strong>Histórico de avisos enviados:</strong> quais avisos já foram mandados para você e quando, para não repetir o mesmo aviso. Guardamos só os últimos 15 dias, mais os alertas de preço que ainda existem na sua conta.</li>
   <li><strong>Datas</strong> de criação e da última atualização da conta.</li>
   <li><strong>Última vez que você usou o app:</strong> enquanto o app está aberto, ele marca a hora na sua conta a cada poucos minutos. Só a hora, nada sobre o que você fez nele.</li>
 </ul>
 <p>A senha de quem entra com e-mail fica com o Google (Firebase Authentication). Nós nunca vemos a sua senha.</p>
+
+<h2>Notas de corretagem</h2>
+<p>Quando você sobe uma nota de corretagem em PDF, o arquivo vai para o nosso leitor (no Cloudflare), que o manda para a inteligência artificial da Anthropic (Claude) ler as operações. O leitor devolve ao app só as compras, as vendas e as taxas. O PDF, o seu nome, o CPF, o endereço e o código de cliente que aparecem na nota não ficam guardados: nem pela InfoBolsa, nem no leitor. Para ler, é preciso estar com a conta aberta, e cada conta pode mandar até 20 arquivos por dia.</p>
 
 <h2>Problemas e sugestões</h2>
 <p>Quando você manda um problema ou uma sugestão pelo app, guardamos o texto, o tipo da mensagem, a versão do app, o modelo do celular, a versão do Android e o estilo visual que você usa. Isso ajuda a achar e corrigir defeitos. Se você estiver com a conta aberta, guardamos também o seu identificador de conta e, se marcar que quer resposta, o seu e-mail.</p>
@@ -76,6 +79,7 @@
   <li><strong>Google (Firebase):</strong> login, banco de dados da conta (servidores em São Paulo) e envio de notificações.</li>
   <li><strong>Expo:</strong> entrega das atualizações do app. Ao baixar uma atualização, o servidor da Expo recebe dados técnicos do aparelho, como o endereço IP.</li>
   <li><strong>GitHub:</strong> hospeda os arquivos públicos de cotações, notícias e agenda que o app baixa. Ao baixar, o GitHub recebe dados técnicos, como o endereço IP.</li>
+  <li><strong>Cloudflare e Anthropic:</strong> leitura das notas de corretagem que você subir. O Cloudflare recebe o arquivo e o repassa, sem guardar, para a Anthropic, que lê com a inteligência artificial Claude. A Anthropic não usa o conteúdo para treinar os modelos dela e só o guarda por um prazo curto, por segurança, conforme as regras dela.</li>
   <li><strong>brapi e YouTube:</strong> logos das empresas e miniaturas dos vídeos, carregadas direto desses serviços.</li>
 </ul>
 <p>Alguns desses serviços podem processar dados fora do Brasil, sempre com as garantias previstas na LGPD. Também podemos informar dados a autoridades quando a lei obrigar.</p>
