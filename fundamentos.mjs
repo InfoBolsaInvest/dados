@@ -203,17 +203,60 @@ try {
   console.log(`valor patrimonial (Yahoo): ${n} ações`);
 } catch (e) { console.log(`Yahoo: ${e.message}`); }
 
+// ---------- eventos antigos (Yahoo) ----------
+// A B3 só mostra o último evento de cada empresa (da ITSA4, só a bonificação de 2025; as de 2022 e 2023 sumiram), e
+// quem manda notas de anos atrás precisa dos antigos. O Yahoo tem a lista inteira desde 2020 (bonificação e
+// desdobramento vêm juntos, como "11:10"). Cada ativo é olhado uma vez e de novo depois de 60 dias, 400 por dia, os
+// mais negociados primeiro. Guardado em site/proventos (cache do Actions; sem ele, vale o publicado).
+const ARQ_Y = 'site/proventos/_eventos-yahoo.json';
+mkdirSync('site/proventos', { recursive: true });
+let evY = {};
+if (existsSync(ARQ_Y)) evY = JSON.parse(readFileSync(ARQ_Y, 'utf8'));
+else try { const r = await fetch(`${SITE}/proventos/_eventos-yahoo.json`); if (r.ok) evY = await r.json(); } catch {}
+const diaUtilAntes = (iso) => { const d = new Date(`${iso}T12:00:00Z`); do d.setUTCDate(d.getUTCDate() - 1); while ([0, 6].includes(d.getUTCDay())); return d.toISOString().slice(0, 10); };
+const velho = diaBR(new Date(agora.getTime() - 60 * 86400000));
+const filaY = Object.keys(cat).filter((tk) => !evY[tk] || evY[tk].d < velho)
+  .sort((x, y) => (!evY[x] !== !evY[y] ? (evY[x] ? 1 : -1) : (cat[y][4] || 0) - (cat[x][4] || 0))).slice(0, 400);
+let olhadosY = 0;
+await Promise.all(Array.from({ length: 8 }, async () => {
+  while (filaY.length) {
+    const tk = filaY.shift();
+    try {
+      const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${tk}.SA?period1=946684800&period2=${Math.floor(Date.now() / 1000)}&interval=1mo&events=split`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (r.status !== 200 && r.status !== 404) continue; // limite ou falha: tenta outro dia
+      const s = r.ok ? (await r.json()).chart?.result?.[0]?.events?.splits || {} : {};
+      const e = [];
+      for (const x of Object.values(s)) {
+        const mult = x.numerator / x.denominator;
+        if (!(mult > 0) || Math.abs(mult - 1) < 0.001) continue;
+        // a data do Yahoo é a data ex; a data com é o pregão anterior
+        const com = diaUtilAntes(diaBR(new Date(x.date * 1000)));
+        e.push([com, mult < 1 ? 'grup' : mult <= 1.35 ? 'bon' : 'desd', Math.round(mult * 1e8) / 1e8]);
+      }
+      evY[tk] = { d: diaBR(agora), e };
+      olhadosY++;
+    } catch {}
+    await espera(150);
+  }
+}));
+writeFileSync(ARQ_Y, JSON.stringify(evY));
+console.log(`eventos antigos (Yahoo): ${olhadosY} ativos olhados hoje, ${Object.keys(evY).length} no total`);
+// o mesmo evento em duas fontes: datas a até 10 dias e a mesma proporção (a B3 dá a data com; o Yahoo, a ex)
+const mesmoEv = (x, y) => Math.abs(new Date(x[0]) - new Date(y[0])) <= 10 * 86400000 && Math.abs(x[2] / y[2] - 1) < 0.02;
+
 // ---------- junta e publica ----------
 const a = {};
-for (const tk of new Set([...Object.keys(prov), ...Object.keys(vp), ...Object.keys(ev)])) {
+for (const tk of new Set([...Object.keys(prov), ...Object.keys(vp), ...Object.keys(ev), ...Object.keys(evY).filter((t) => evY[t].e.length)])) {
   a[tk] = {};
   if (prov[tk]) a[tk].p = prov[tk];
   if (vp[tk]) a[tk].vp = vp[tk];
-  if (ev[tk]) {
-    // o custo atribuído da bonificação (5º campo) vem do eventos.mjs: fica o que já foi achado antes
-    const antes = anterior.a?.[tk]?.e || [];
-    a[tk].e = ev[tk].map((e) => { const x = antes.find((y) => y[0] === e[0] && y[1] === e[1]); return x && x.length > 4 ? [...e, x[4]] : e; });
-  }
+  // os eventos da B3 de hoje, os que ela já mostrou antes e parou de mostrar, e os do Yahoo que nenhuma das duas tem
+  const antes = anterior.a?.[tk]?.e || [];
+  // o custo atribuído da bonificação (5º campo) vem do eventos.mjs: fica o que já foi achado antes
+  const e = (ev[tk] || []).map((e) => { const x = antes.find((y) => y[0] === e[0] && y[1] === e[1]); return x && x.length > 4 ? [...e, x[4]] : e; });
+  for (const x of antes) if (!e.some((y) => (y[0] === x[0] && y[1] === x[1]) || mesmoEv(x, y))) e.push(x);
+  for (const x of evY[tk]?.e || []) if (!e.some((y) => mesmoEv(x, y))) e.push(x);
+  if (e.length) a[tk].e = e.sort((x, y) => (x[0] < y[0] ? 1 : -1));
 }
 // o que falhou hoje fica com o dado de ontem: o ativo inteiro, ou só a parte que faltou
 // (proventos de quem a consulta na B3 falhou; valor patrimonial quando a CVM ou o Yahoo não responderam)
