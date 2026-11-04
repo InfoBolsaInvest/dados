@@ -10,7 +10,8 @@ const minutos = brt.getUTCHours() * 60 + brt.getUTCMinutes();
 const ARQ = 'site/historico/IFIX.json';
 const atual = existsSync(ARQ) ? JSON.parse(readFileSync(ARQ, 'utf8')) : [];
 const ultimoDia = atual.length ? String(atual[atual.length - 1][0]) : '';
-const forcar = process.env.HISTORICO === '1' || atual.length < 5 || !existsSync('site/longo/IFIX.json');
+// (velas achatadas = arquivo da primeira versão, sem a abertura no fechamento anterior: refaz uma vez)
+const forcar = process.env.HISTORICO === '1' || atual.length < 5 || !existsSync('site/longo/IFIX.json') || atual.every((v) => v[1] === v[4]);
 if (!forcar && (ultimoDia === hoje || minutos < 18 * 60 + 30)) { console.log('IFIX: já está em dia'); process.exit(0); }
 
 async function ano(a) {
@@ -42,15 +43,21 @@ const anoAtual = Number(hoje.slice(0, 4));
 const dias = (await Promise.all([0, 1, 2, 3, 4, 5].map((k) => ano(anoAtual - k)))).flat().sort((x, y) => (x[0] < y[0] ? -1 : 1));
 if (dias.length < 50) throw new Error(`a B3 devolveu só ${dias.length} dias`);
 
-// diário: últimos ~3 meses (mesmo tamanho dos outros históricos), [dia, abertura, máxima, mínima, fechamento]
-const diario = dias.slice(-63).map(([d, c]) => [d, c, c, c, c]);
+// diário: últimos ~3 meses (mesmo tamanho dos outros históricos), [dia, abertura, máxima, mínima, fechamento].
+// A B3 só dá o fechamento: cada vela abre no fechamento do dia anterior (senão o candle vira um tracinho)
+const diario = dias.slice(-64).map(([d, c], i, l) => { const a = i ? l[i - 1][1] : c; return [d, a, Math.max(a, c), Math.min(a, c), c]; }).slice(1);
 // semanal: cada semana começando na segunda-feira, com o primeiro, o maior, o menor e o último fechamento
 const semanas = new Map();
 for (const [d, c] of dias) {
   const dt = new Date(d + 'T12:00:00Z');
   const seg = new Date(dt.getTime() - ((dt.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10);
   const s = semanas.get(seg);
-  if (s) { s[2] = Math.max(s[2], c); s[3] = Math.min(s[3], c); s[4] = c; } else semanas.set(seg, [seg, c, c, c, c]);
+  if (s) { s[2] = Math.max(s[2], c); s[3] = Math.min(s[3], c); s[4] = c; } else {
+    // a semana abre no fechamento da semana anterior
+    const ant = [...semanas.values()].pop();
+    const a = ant ? ant[4] : c;
+    semanas.set(seg, [seg, a, Math.max(a, c), Math.min(a, c), c]);
+  }
 }
 const semanal = [...semanas.values()].slice(-262);
 writeFileSync(ARQ, JSON.stringify(diario));
