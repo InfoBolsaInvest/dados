@@ -165,8 +165,9 @@ async function rendaFixa(id, hash) {
     if (!(aplicado > 0)) continue;
     const compras = fixLanc.filter((x) => x.type === 'Compra' && x.ticker === p.ticker);
     const produto = PRODUTOS.find((y) => semAcento(y) === semAcento(p.investment_type)) || 'Outro';
+    // o tipo de taxa manda: pré-fixado vem com indexer "CDI" no Investidor10 (ex.: "CDB C6 Pré-Fixado 1,68%")
     const indexador = semAcento(p.indexer);
-    const ind = /CDI/.test(indexador) ? 'cdi' : /IPCA/.test(indexador) ? 'ipca' : /SELIC/.test(indexador) ? 'selic' : 'pre';
+    const ind = semAcento(p.rate_type) === 'PRE' ? 'pre' : /IPCA/.test(indexador) ? 'ipca' : /SELIC/.test(indexador) ? 'selic' : /CDI/.test(indexador) ? 'cdi' : 'pre';
     const taxa = ind === 'cdi' ? Number(p.percentage_cdi) : Number(p.percentage_year) || 0;
     if (!compras.length) { fora.push(p.ticker); continue; }
     for (const { x, parte } of lotesAtuais(compras, aplicado, (y) => Number(y.total_raw))) {
