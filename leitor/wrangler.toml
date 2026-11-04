@@ -1,0 +1,10 @@
+# Leitor de prints da corretora (Cloudflare Worker). Publicar: npx wrangler deploy (nesta pasta).
+# Segredo ANTHROPIC_API_KEY: colocado pelo dono no painel do Cloudflare (Worker > Configurações > Variáveis).
+name = "infobolsa-leitor"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+[[kv_namespaces]]
+binding = "LIMITE"
+id = "068cec3855b942d88145726f3d6f222b"

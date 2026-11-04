@@ -6,3 +6,6 @@ node_modules/
 .cvm.zip
 gha-creds-*.json
 .alerta/
+leitor/node_modules/
+leitor/.wrangler/
+leitor/.env
