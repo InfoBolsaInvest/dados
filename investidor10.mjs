@@ -204,7 +204,7 @@ async function conferir(entendido, fora, rfFora) {
     const r = await client.messages.create({
       model: 'claude-haiku-5-5',
       max_tokens: 1500,
-      system: 'Você confere a importação de renda fixa de uma carteira do Investidor10 para um app. Cada linha traz o nome original do item e como o robô entendeu. Aponte só erros claros de interpretação (tipo de produto, indexador, pré ou pós, taxa, vencimento, isenção de IR) comparando com o nome original. Não comente o que está certo. Responda em português do Brasil, frases curtas, sem travessão.',
+      system: 'Você confere a importação de renda fixa de uma carteira do Investidor10 para um app. Cada linha traz o nome original do item e como o robô entendeu. Liste só erros claros: quando o nome original diz uma coisa e o robô entendeu outra (tipo de produto, pré ou pós-fixado, indexador, taxa, isenção de IR). Informação que o nome não traz não é erro. Grafia diferente do emissor não é erro. Se não houver erro claro, devolva a lista vazia. Nunca liste o que está certo nem faça observações. Cada erro em uma frase curta, em português do Brasil, sem travessão.',
       output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object', properties: { problemas: { type: 'array', items: { type: 'string' } } }, required: ['problemas'], additionalProperties: false } } },
       messages: [{ role: 'user', content: [...entendido, ...(fora.length || rfFora.length ? [`Não entraram: ${[...fora, ...rfFora].join(', ')}`] : [])].join('\n') }],
     });
