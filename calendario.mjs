@@ -87,7 +87,7 @@ const ibge = [];
 try {
   const fim = new Date(Date.now() + 200 * 86400 * 1000);
   const br = (d) => `${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}-${d.getUTCFullYear()}`;
-  const r = await fetch(`https://servicodados.ibge.gov.br/api/v3/calendario/?de=${br(new Date())}&ate=${br(fim)}&qtd=500`);
+  const r = await fetch(`https://servicodados.ibge.gov.br/api/v3/calendario/?de=${br(new Date())}&ate=${br(fim)}&qtd=500`, { signal: AbortSignal.timeout(5000) });
   const j = await r.json();
   for (const x of j.items || j) {
     const nome = x.nome_produto || x.titulo || '';
