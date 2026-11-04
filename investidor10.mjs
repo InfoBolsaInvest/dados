@@ -1,5 +1,6 @@
 // Carteiras dos clientes do acompanhamento que usam o Investidor10: 1x por dia, depois das 18h, lê o link
-// público de cada um (campo i10 em carteiras/{uid}) e atualiza as posições sozinho no app.
+// público de cada um (campo i10 em carteiras/{uid}) e atualiza sozinho no app as posições (ações, FIIs, ETFs,
+// BDRs) e a renda fixa (Tesouro e CDB/LCI/LCA..., cada aplicação com a data, pelos lançamentos).
 // O link público não pede senha: é o próprio cliente que deixa a carteira visível e manda o link.
 // Travas: leitura que falha, que vem vazia ou que "perde" mais da metade da carteira de uma vez não mexe em nada
 // (provável instabilidade do site) e avisa no Telegram. Quando muda algo, avisa o dono no celular.
@@ -12,7 +13,7 @@ if (!TOKEN) { console.log('sem GOOGLE_TOKEN: pulei as carteiras do Investidor10'
 const FS = `https://firestore.googleapis.com/v1/projects/${PROJETO}/databases/(default)/documents`;
 const H = { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
-const TIPOS = ['Ticker', 'Fii', 'Etf', 'Bdr']; // ações, FIIs (e Fiagro), ETFs e BDRs; renda fixa e Tesouro ainda não entram na carteira do app
+const TIPOS = ['Ticker', 'Fii', 'Etf', 'Bdr']; // ações, FIIs (e Fiagro), ETFs e BDRs; Tesouro e renda fixa vêm à parte (rendaFixa); cripto não entra
 
 const brt = new Date(Date.now() - 3 * 3600 * 1000);
 const hoje = brt.toISOString().slice(0, 10);
@@ -82,6 +83,105 @@ async function posicoes(id, hash, tipo) {
   return out;
 }
 
+// lançamentos (compras e vendas, com data) de um grupo: 3 = renda fixa (CDB, LCI...), 5 = Tesouro Direto
+async function lancamentos(id, hash, grupo) {
+  const out = [];
+  for (let start = 0; start < 2000; start += 100) {
+    const r = await fetch(`https://investidor10.com.br/wallet/api/proxy/wallet-app/entries/${id}/${grupo}?length=100&start=${start}&orderBy=date&raw=1&hash=${hash}`, { headers: { 'User-Agent': UA, Accept: 'application/json' }, redirect: 'manual' });
+    if (r.status !== 200) throw new Error(`lançamentos ${grupo}: resposta ${r.status}`);
+    const j = await r.json();
+    if (!Array.isArray(j.data)) throw new Error(`lançamentos ${grupo}: formato mudou`);
+    out.push(...j.data);
+    if (j.data.length < 100) break;
+  }
+  return out;
+}
+
+// ---------- renda fixa: cada aplicação que ainda está na carteira vira um item da renda fixa do app ----------
+const rfdados = (() => { try { return JSON.parse(readFileSync('site/rendafixa.json', 'utf8')); } catch { return { tesouro: [] }; } })();
+const iso = (br) => (/^\d{2}\/\d{2}\/\d{4}$/.test(br || '') ? `${br.slice(6)}-${br.slice(3, 5)}-${br.slice(0, 2)}` : '');
+const semAcento = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+// tipo do título pelo nome, do jeito do app (selic, pre, pre-js, ipca, ipca-js, renda, educa)
+function tipoTesouro(nome) {
+  const n = semAcento(nome);
+  const js = /JUROS/.test(n);
+  if (/SELIC/.test(n)) return 'selic';
+  if (/RENDA\+|RENDA MAIS/.test(n)) return 'renda';
+  if (/EDUCA/.test(n)) return 'educa';
+  if (/IPCA/.test(n)) return js ? 'ipca-js' : 'ipca';
+  if (/PREFIXADO/.test(n)) return js ? 'pre-js' : 'pre';
+  return '';
+}
+const indDoTipo = (t) => (t === 'selic' ? 'selic' : t.startsWith('pre') ? 'pre' : 'ipca');
+// taxa de compra do título no dia (histórico publicado pelo rendafixa.mjs: [dia, PU, taxa])
+function taxaNoDia(id, dia) {
+  try {
+    const linhas = JSON.parse(readFileSync(`site/tesouro/${id}.json`, 'utf8'));
+    let t = null;
+    for (const [d, , tx] of linhas) { if (d <= dia) t = tx; else break; }
+    return t ?? 0;
+  } catch { return 0; }
+}
+// das compras (mais nova primeiro), pega até completar o que ainda está na carteira; a mais antiga pode entrar só em parte
+function lotesAtuais(compras, total, medida) {
+  const out = [];
+  let falta = total;
+  for (const x of [...compras].sort((a, b) => (iso(a.date) < iso(b.date) ? 1 : -1))) {
+    if (falta <= 1e-9) break;
+    const m = medida(x);
+    const usa = Math.min(m, falta);
+    out.push({ x, parte: m > 0 ? usa / m : 0 });
+    falta -= usa;
+  }
+  return out;
+}
+const PRODUTOS = ['CDB', 'LCI', 'LCA', 'LC', 'CRI', 'CRA', 'Debênture'];
+
+async function rendaFixa(id, hash) {
+  const [tesPos, fixPos, tesLanc, fixLanc] = await Promise.all([posicoes(id, hash, 'Treasure'), posicoes(id, hash, 'FixedIncome'), lancamentos(id, hash, 5), lancamentos(id, hash, 3)]);
+  const rf = [];
+  const fora = [];
+  // Tesouro: quantidade atual de cada título, montada a partir das compras mais recentes
+  for (const p of tesPos) {
+    const q = Number(p.quantity);
+    if (!(q > 0)) continue;
+    const compras = tesLanc.filter((x) => x.type === 'Compra' && semAcento(x.ticker) === semAcento(p.ticker));
+    const venc = iso(compras[0]?.due_date);
+    const tipo = tipoTesouro(p.ticker);
+    const t = rfdados.tesouro.find((y) => y.tipo === tipo && y.venc === venc);
+    if (!t) { fora.push(p.ticker); continue; }
+    for (const { x, parte } of lotesAtuais(compras, q, (y) => Number(y.qty))) {
+      const qtd = Number(x.qty) * parte;
+      const dia = iso(x.date);
+      rf.push({ id: `cart-${t.id}-${dia}-${x.id}`, produto: 'Tesouro', nome: t.nome, ind: indDoTipo(t.tipo), taxa: taxaNoDia(t.id, dia), valor: Math.round(qtd * Number(x.price_raw) * 100) / 100, data: dia, venc: t.venc, isento: false, titulo: t.id, qtd });
+    }
+  }
+  // CDB, LCI, LCA...: valor aplicado atual, montado a partir das aplicações mais recentes
+  for (const p of fixPos) {
+    const aplicado = Number(p.applied);
+    if (!(aplicado > 0)) continue;
+    const compras = fixLanc.filter((x) => x.type === 'Compra' && x.ticker === p.ticker);
+    const produto = PRODUTOS.find((y) => semAcento(y) === semAcento(p.investment_type)) || 'Outro';
+    const indexador = semAcento(p.indexer);
+    const ind = /CDI/.test(indexador) ? 'cdi' : /IPCA/.test(indexador) ? 'ipca' : /SELIC/.test(indexador) ? 'selic' : 'pre';
+    const taxa = ind === 'cdi' ? Number(p.percentage_cdi) : Number(p.percentage_year) || 0;
+    if (!compras.length) { fora.push(p.ticker); continue; }
+    for (const { x, parte } of lotesAtuais(compras, aplicado, (y) => Number(y.total_raw))) {
+      const dia = iso(x.date);
+      rf.push({ id: `cart-fixa-${dia}-${x.id}`, produto, nome: p.emitter || '', ind, taxa, valor: Math.round(Number(x.total_raw) * parte * 100) / 100, data: dia, venc: iso(x.due_date), isento: ['LCI', 'LCA', 'CRI', 'CRA'].includes(produto) });
+    }
+  }
+  rf.sort((a, b) => (a.data < b.data ? -1 : 1));
+  return { rf, fora };
+}
+// JSON comum → formato do Firestore
+const paraFs = (v) => (v === null || v === undefined ? { nullValue: null }
+  : typeof v === 'string' ? { stringValue: v }
+    : typeof v === 'boolean' ? { booleanValue: v }
+      : typeof v === 'number' ? num(v)
+        : Array.isArray(v) ? { arrayValue: { values: v.map(paraFs) } }
+          : { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, paraFs(x)])) } });
+
 const r = await fetch(`${FS}/carteiras?pageSize=300`, { headers: H });
 if (!r.ok) throw new Error(`Firestore carteiras: ${r.status}`);
 const carteiras = ((await r.json()).documents || [])
@@ -138,10 +238,19 @@ for (const c of carteiras) {
       else if (Math.abs(v.pm - x.pm) > 0.01) mud.push(`${tk}: preço médio ${reais(v.pm)} → ${reais(x.pm)}`);
     }
     for (const tk of sumiram) mud.push(`${tk} saiu`);
-    const obs = fora.length ? ` Fora da lista da B3 do app: ${fora.join(', ')}.` : '';
+    // renda fixa (Tesouro, CDB, LCI...): compara pelo que importa pro app
+    const { rf, fora: rfFora } = await rendaFixa(link.id, link.hash);
+    const chaveRf = (l) => JSON.stringify((l || []).map((x) => [x.produto, x.nome, x.valor, x.data, x.venc, x.taxa, x.qtd ?? null]));
+    // trava: a renda fixa toda sumindo de uma vez é mais provável erro de leitura do que venda de tudo
+    const rfSumiu = !rf.length && (c.rf || []).length > 0;
+    const rfMudou = !rfSumiu && chaveRf(rf) !== chaveRf(c.rf);
+    if (rfSumiu) rfFora.push('a renda fixa veio vazia, mantive a anterior');
+    if (rfMudou) mud.push(`renda fixa: ${rf.length} ${rf.length === 1 ? 'aplicação' : 'aplicações'}`);
+    const obs = (fora.length ? ` Fora da lista da B3 do app: ${fora.join(', ')}.` : '') + (rfFora.length ? ` Renda fixa que não entrou: ${rfFora.join(', ')}.` : '');
     const campos = { i10Em: { stringValue: hoje }, i10Msg: { stringValue: (mud.length ? `Atualizada: ${mud.join('; ')}.` : 'Sem mudança.') + obs } };
     if (mud.length) {
       campos.pos = { mapValue: { fields: Object.fromEntries(Object.entries(novo).map(([tk, x]) => [tk, { mapValue: { fields: { q: num(x.q), pm: num(x.pm) } } }])) } };
+      campos.rf = paraFs(rfSumiu ? c.rf : rf);
       campos.atualizadoEm = { timestampValue: new Date().toISOString() };
     }
     await salvar(campos);
