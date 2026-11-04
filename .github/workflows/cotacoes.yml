@@ -80,19 +80,8 @@ jobs:
           path: .alerta
           key: alerta-${{ github.run_id }}
           restore-keys: alerta-
-      # (uma vez só, 04/11/2026: os anos da B3 ficaram no cache junto com o histórico; daqui em diante vão em um
-      # cache só deles. A lista de pastas faz parte do cache: mudou a lista, o cache antigo não volta.)
-      - name: Trazer os anos da B3 do cache antigo
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            site/historico
-            site/longo
-            site/tesouro
-            site/proventos
-            cache-b3
-          key: historico-${{ github.run_id }}
-          restore-keys: historico-
+      # os anos da B3 (b3hist.mjs) vão em um cache só deles: a lista de pastas faz parte da chave do cache, e o histórico
+      # tem que continuar com a mesma lista para o cache dele voltar
       - name: Trazer os anos da B3 guardados
         uses: actions/cache/restore@v4
         with:

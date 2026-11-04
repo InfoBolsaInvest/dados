@@ -31,6 +31,8 @@ const ESQUEMA = {
           irrf: NUM,
           liquido: NUM,
           dc: { type: 'string', enum: ['D', 'C'] },
+          opc_compras: NUM,
+          opc_vendas: NUM,
           outros: { type: 'boolean' },
           ops: {
             type: 'array',
@@ -46,13 +48,16 @@ const ESQUEMA = {
                 vl: NUM,
                 dt: { type: 'boolean' },
                 ex: { type: 'boolean' },
+                opc: { type: 'string', enum: ['', 'call', 'put'] },
+                serie: { type: 'string' },
+                venc: { type: 'string' },
               },
-              required: ['cv', 'esp', 'tk', 'deduzido', 'q', 'p', 'vl', 'dt', 'ex'],
+              required: ['cv', 'esp', 'tk', 'deduzido', 'q', 'p', 'vl', 'dt', 'ex', 'opc', 'serie', 'venc'],
               additionalProperties: false,
             },
           },
         },
-        required: ['n', 'd', 'compras', 'vendas', 'custos', 'irrf', 'liquido', 'dc', 'outros', 'ops'],
+        required: ['n', 'd', 'compras', 'vendas', 'custos', 'irrf', 'liquido', 'dc', 'opc_compras', 'opc_vendas', 'outros', 'ops'],
         additionalProperties: false,
       },
     },
@@ -62,17 +67,20 @@ const ESQUEMA = {
 };
 const SISTEMA = 'Você lê notas de corretagem (nota de negociação) da bolsa brasileira, no padrão Sinacor da B3. Para cada nota do PDF, devolva:\n'
   + '- n: o Nr. nota. d: a Data pregão, em aaaa-mm-dd.\n'
-  + '- compras e vendas: só os valores das linhas "Compras à vista" e "Vendas à vista" do Resumo dos Negócios (opções e termo têm linhas próprias e não entram).\n'
+  + '- compras e vendas: só os valores das linhas "Compras à vista" e "Vendas à vista" do Resumo dos Negócios.\n'
+  + '- opc_compras e opc_vendas: os valores das linhas "Opções - compras" e "Opções - vendas" do Resumo dos Negócios (0 se não houver).\n'
   + '- custos: o total de custos e taxas da nota em reais (taxa de liquidação, taxa de registro, emolumentos, taxa de termo ou opções, taxa A.N.A., corretagem, ISS, impostos e outras), sem o I.R.R.F.\n'
   + '- irrf: o I.R.R.F. sobre operações (0 se não houver).\n'
   + '- liquido e dc: o valor do "Líquido para" (com a data) e a letra ao lado dele: D quando a pessoa paga, C quando recebe.\n'
-  + '- ops: cada linha de "Negócios realizados" do mercado VISTA, FRACIONARIO ou de exercício de opção (EXERC OPC COMPRA, EXERC OPC VENDA). cv: C ou V, como está na linha. esp: a especificação do título como está na nota. '
+  + '- ops: cada linha de "Negócios realizados" do mercado VISTA, FRACIONARIO, OPCAO DE COMPRA, OPCAO DE VENDA ou de exercício de opção (EXERC OPC COMPRA, EXERC OPC VENDA). cv: C ou V, como está na linha. esp: a especificação do título inteira, como está na nota (nome e classe, ex.: COSAN ON NM). '
   + 'tk: o ticker (ex.: HGRU11, PETR4, BOVA11, AAPL34; no fracionário, sem o F do final). Quando a nota trouxer só o nome (ex.: PETROBRAS PN N2), deduza o ticker pelo nome e pela classe (ON = 3, PN = 4, PNA = 5, PNB = 6, UNT = 11) e marque deduzido true. '
   + 'No exercício de opção, a linha é a compra ou a venda da ação pelo preço de exercício: tk é o ticker da ação (as 4 letras do código da opção mais o número da classe; ex.: PETRK319E PN = PETR4, CSANX59E ON = CSAN3, BRKMR820E PNA = BRKM5), deduzido true e ex true. Nas outras linhas, ex false. '
+  + 'Na compra ou venda de opção (OPCAO DE COMPRA ou OPCAO DE VENDA), tk é o código da opção como está na nota (ex.: PETRK319, BBASL24), deduzido false. '
+  + 'opc: call na OPCAO DE COMPRA e no EXERC OPC COMPRA, put na OPCAO DE VENDA e no EXERC OPC VENDA, vazio nas outras. serie: o código da opção nas linhas de opção e de exercício (ex.: PETRK319E), vazio nas outras. venc: o Prazo da linha de opção ou de exercício (mm/aa), vazio nas outras. '
   + 'q: a quantidade. p: o preço. vl: o valor da operação. dt: true quando a coluna Obs. tiver D (day trade).\n'
-  + '- outros: true se a nota tiver operações com opções (compra ou venda da opção, não o exercício), termo ou futuro. Essas não entram em ops.\n'
+  + '- outros: true se a nota tiver operações a termo ou no mercado futuro. Essas não entram em ops.\n'
   + 'Uma nota pode ter várias folhas com o mesmo Nr. nota: junte tudo em uma só. Leia todas as linhas de todas as folhas, inclusive as repetidas: cada linha é uma operação, mesmo que seja igual à de cima. '
-  + 'Antes de responder, confira se a soma dos valores das compras bate com "Compras à vista" (e a das vendas com "Vendas à vista"); se não bater, procure a linha que faltou. Copie os números exatamente como estão na nota. '
+  + 'Antes de responder, confira se a soma dos valores das compras à vista bate com "Compras à vista", a das vendas com "Vendas à vista" e a das opções com "Opções - compras" e "Opções - vendas"; se não bater, procure a linha que faltou. Copie os números exatamente como estão na nota. '
   + 'Se o arquivo não for uma nota de corretagem, e_nota é false e notas vem vazia.';
 
 const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type', 'Access-Control-Allow-Methods': 'POST, OPTIONS' };
@@ -104,18 +112,32 @@ async function usuario(token) {
 }
 
 const cent = (v) => Math.round((Number(v) || 0) * 100) / 100;
-const normalizar = (notas) => (notas || [])
+// código da opção: as 4 do ativo (B3SA, PETR), a letra do mês (A a L call, M a X put), o número (2 a 4 algarismos: COSAN3 é a ação lida com o nome) e, na semanal, W e a
+// semana (o E do fim, de opção europeia, sai: na linha de exercício a nota escreve PETRK319E para a mesma PETRK319)
+const serieDe = (s) => (String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '').match(/^[A-Z0-9]{3}[A-Z][A-X]\d{2,4}(W\d)?/) || [''])[0];
+// a letra do mês diz se é call ou put (mais firme que a leitura)
+const tipoDe = (serie) => (serie ? (serie[4] <= 'L' ? 'call' : 'put') : '');
+// opcoes: o app novo pede as opções (?opcoes=1); o app antigo recebe as notas como antes, sem elas
+const normalizar = (notas, opcoes) => (notas || [])
   .map((x) => ({
     n: String(x.n || '').replace(/\D/g, ''),
     d: /^\d{4}-\d{2}-\d{2}$/.test(x.d) ? x.d : '',
-    compras: cent(x.compras), vendas: cent(x.vendas), custos: cent(x.custos), irrf: cent(x.irrf), liquido: cent(x.liquido), dc: x.dc === 'C' ? 'C' : 'D', outros: !!x.outros,
-    ops: (x.ops || []).map((o) => ({
-      cv: o.cv === 'V' ? 'V' : 'C',
-      esp: String(o.esp || '').slice(0, 60),
-      tk: String(o.tk || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z0-9]{4}\d{1,2})F$/, '$1'),
-      deduzido: !!o.deduzido,
-      q: Math.round(Number(o.q) || 0), p: Number(o.p) || 0, vl: cent(o.vl), dt: !!o.dt, ex: !!o.ex,
-    })).filter((o) => o.q > 0),
+    compras: cent(x.compras), vendas: cent(x.vendas), custos: cent(x.custos), irrf: cent(x.irrf), liquido: cent(x.liquido), dc: x.dc === 'C' ? 'C' : 'D',
+    ...(opcoes ? { opcCompras: cent(x.opc_compras), opcVendas: cent(x.opc_vendas) } : {}),
+    outros: !!x.outros || (!opcoes && (x.ops || []).some((o) => o.opc && !o.ex)),
+    ops: (x.ops || []).map((o) => {
+      const serie = o.ex ? serieDe(o.serie) || serieDe((String(o.esp || '').toUpperCase().match(/[A-Z0-9]{4}[A-X]\d{2,4}(W\d)?E?\b/) || [''])[0]) : serieDe(o.tk) || (o.opc ? serieDe(o.serie) : '');
+      const opc = tipoDe(serie);
+      const venc = /^\d{2}\/\d{2}$/.test(o.venc) ? o.venc : '';
+      return {
+        cv: o.cv === 'V' ? 'V' : 'C',
+        esp: String(o.esp || '').slice(0, 60),
+        tk: opc && !o.ex ? serie : String(o.tk || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z0-9]{4}\d{1,2})F$/, '$1'),
+        deduzido: opc && !o.ex ? false : !!o.deduzido,
+        q: Math.round(Number(o.q) || 0), p: Number(o.p) || 0, vl: cent(o.vl), dt: !!o.dt, ex: !!o.ex,
+        ...(opcoes && opc ? { opc, serie, venc } : {}),
+      };
+    }).filter((o) => o.q > 0 && (opcoes || !o.opc || o.ex)),
   }))
   .filter((x) => x.n && x.d);
 
@@ -190,5 +212,6 @@ export async function lerNota(req, env, uid) {
   if (r.stop_reason !== 'end_turn') return resposta(502, { erro: r.stop_reason === 'max_tokens' ? 'paginas' : 'ia', parou: r.stop_reason });
   let j;
   try { j = JSON.parse(r.content.find((b) => b.type === 'text')?.text || '{}'); } catch { return resposta(502, { erro: 'ia' }); }
-  return resposta(200, { e_nota: !!j.e_nota, notas: j.e_nota ? normalizar(j.notas) : [], uso: { ent: r.usage?.input_tokens, sai: r.usage?.output_tokens } });
+  const opcoes = new URL(req.url).searchParams.get('opcoes') === '1';
+  return resposta(200, { e_nota: !!j.e_nota, notas: j.e_nota ? normalizar(j.notas, opcoes) : [], uso: { ent: r.usage?.input_tokens, sai: r.usage?.output_tokens } });
 }
