@@ -56,7 +56,7 @@ const ESQUEMA = {
 const SISTEMA = 'Você lê prints da carteira de investimentos de corretoras brasileiras (posição em ações, FIIs, Fiagros, ETFs e BDRs). '
   + 'Para cada ativo da bolsa que aparecer, devolva o ticker (ex.: PETR4, MXRF11, IVVB11, AAPL34, sem o F do fracionário), a quantidade total e o preço médio por ação ou cota em reais. '
   + 'Se o print não mostrar o preço médio, p é null; não calcule a partir do valor total nem use a cotação atual. '
-  + 'Se o mesmo ticker aparecer no fracionário e no lote padrão, some as quantidades. Ignore renda fixa, Tesouro, fundos de investimento, cripto e saldo em conta. '
+  + 'Se o mesmo ticker aparecer no fracionário e no lote padrão, some as quantidades e use como preço médio a média ponderada pelas quantidades. Ignore renda fixa, Tesouro, fundos de investimento, cripto e saldo em conta. '
   + 'Marque duvida true quando algum número estiver cortado, borrado ou ambíguo. Se a imagem não for uma carteira de investimentos, e_carteira é false e a lista vem vazia.';
 
 // junta as partes da imagem e já apaga (a imagem não fica guardada)
