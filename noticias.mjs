@@ -15,7 +15,8 @@ const FEEDS = [
   ['FIIs', 'https://fiis.com.br/feed/'],
 ];
 // páginas de cotação que o Google Notícias às vezes mistura com notícia
-const NAO_E_NOTICIA = /hist[óo]rico de pre[çc]os|^cota[çc][ãa]o|cota[çc][ãa]o (hoje|em tempo real|e indicadores)|^gr[áa]fico/i;
+// páginas de cotação e resultado de loteria (os portais publicam no mesmo feed) não são notícia de mercado
+const NAO_E_NOTICIA = /hist[óo]rico de pre[çc]os|^cota[çc][ãa]o|cota[çc][ãa]o (hoje|em tempo real|e indicadores)|^gr[áa]fico|\b(mega-?sena|quina|lotof[áa]cil|lotomania|timemania|dupla sena|dia de sorte|super sete|\+milion[áa]ria|loteria federal)\b.*(concurso|resultado|sorteio|pr[êe]mio)/i;
 const POR_TICKER = 120; // ativos com busca própria no Google Notícias (os mais negociados)
 const DIAS = 7;
 // nomes que aparecem na manchete sem o ticker
@@ -108,6 +109,22 @@ for (const n of [...novas, ...publicadas]) {
   if (ja) { ja.t = [...new Set([...ja.t, ...n.t])]; continue; }
   porChave.set(k, n);
 }
-const lista = [...porChave.values()].sort((a, b) => (a.d + a.h.padStart(5, '0') < b.d + b.h.padStart(5, '0') ? 1 : -1)).slice(0, 1500);
+// manchete quase igual da mesma fonte no mesmo dia (o site só trocou uma palavra: "caíram" → "caem"): fica a
+// mais nova, com os tickers das duas. Parecida = 75% ou mais das palavras em comum.
+const palavras = (ti) => new Set(ti.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+const parecida = (a, b) => {
+  const pa = palavras(a.ti), pb = palavras(b.ti);
+  let comum = 0;
+  for (const w of pa) if (pb.has(w)) comum++;
+  return comum / Math.max(1, Math.min(pa.size, pb.size)) >= 0.75 && comum >= 4;
+};
+const ordenadas = [...porChave.values()].sort((a, b) => (a.d + a.h.padStart(5, '0') < b.d + b.h.padStart(5, '0') ? 1 : -1));
+const unicas = [];
+for (const n of ordenadas) {
+  const igual = unicas.find((u) => u.f === n.f && u.d === n.d && parecida(u, n));
+  if (igual) { igual.t = [...new Set([...igual.t, ...n.t])]; continue; }
+  unicas.push(n);
+}
+const lista = unicas.slice(0, 1500);
 writeFileSync('site/noticias.json', JSON.stringify({ atualizadoEm: agora.toISOString(), buscaPorTicker: ultimaBusca, n: lista }));
 console.log(`ok: ${lista.length} notícias (${novas.length} lidas agora)`);
