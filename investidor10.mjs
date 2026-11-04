@@ -244,7 +244,7 @@ for (const c of carteiras) {
     for (const tk of sumiram) mud.push(`${tk} saiu`);
     // renda fixa (Tesouro, CDB, LCI...): compara pelo que importa pro app
     const { rf, fora: rfFora } = await rendaFixa(link.id, link.hash);
-    const chaveRf = (l) => JSON.stringify((l || []).map((x) => [x.produto, x.nome, x.valor, x.data, x.venc, x.taxa, x.qtd ?? null]));
+    const chaveRf = (l) => JSON.stringify((l || []).map((x) => [x.produto, x.nome, x.ind, x.taxa, x.valor, x.data, x.venc, x.isento, x.qtd ?? null]));
     // trava: a renda fixa toda sumindo de uma vez é mais provável erro de leitura do que venda de tudo
     const rfSumiu = !rf.length && (c.rf || []).length > 0;
     const rfMudou = !rfSumiu && chaveRf(rf) !== chaveRf(c.rf);
