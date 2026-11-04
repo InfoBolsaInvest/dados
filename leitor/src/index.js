@@ -135,9 +135,10 @@ const normalizar = (notas, opcoes) => (notas || [])
         tk: opc && !o.ex ? serie : String(o.tk || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z0-9]{4}\d{1,2})F$/, '$1'),
         deduzido: opc && !o.ex ? false : !!o.deduzido,
         q: Math.round(Number(o.q) || 0), p: Number(o.p) || 0, vl: cent(o.vl), dt: !!o.dt, ex: !!o.ex,
-        ...(opcoes && opc ? { opc, serie, venc } : {}),
+        ...(opc ? { opc, serie, venc } : {}),
       };
-    }).filter((o) => o.q > 0 && (opcoes || !o.opc || o.ex)),
+    }).filter((o) => o.q > 0 && (opcoes || !o.opc || o.ex))
+      .map((o) => (opcoes ? o : (({ opc: _o, serie: _s, venc: _v, ...resto }) => resto)(o))),
   }))
   .filter((x) => x.n && x.d);
 
