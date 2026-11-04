@@ -144,6 +144,7 @@ async function rendaFixa(id, hash) {
   const [tesPos, fixPos, tesLanc, fixLanc] = await Promise.all([posicoes(id, hash, 'Treasure'), posicoes(id, hash, 'FixedIncome'), lancamentos(id, hash, 5), lancamentos(id, hash, 3)]);
   const rf = [];
   const fora = [];
+  const entendido = []; // nome no Investidor10 → como o robô entendeu (vai pra conferência da IA)
   // Tesouro: quantidade atual de cada título, montada a partir das compras mais recentes
   for (const p of tesPos) {
     const q = Number(p.quantity);
@@ -153,6 +154,7 @@ async function rendaFixa(id, hash) {
     const tipo = tipoTesouro(p.ticker);
     const t = rfdados.tesouro.find((y) => y.tipo === tipo && y.venc === venc);
     if (!t) { fora.push(p.ticker); continue; }
+    entendido.push(`"${p.ticker}" → ${t.nome}, vence ${t.venc}, ${q} títulos`);
     for (const { x, parte } of lotesAtuais(compras, q, (y) => Number(y.qty))) {
       const qtd = Number(x.qty) * parte;
       const dia = iso(x.date);
@@ -170,14 +172,38 @@ async function rendaFixa(id, hash) {
     const ind = semAcento(p.rate_type) === 'PRE' ? 'pre' : /IPCA/.test(indexador) ? 'ipca' : /SELIC/.test(indexador) ? 'selic' : /CDI/.test(indexador) ? 'cdi' : 'pre';
     const taxa = ind === 'cdi' ? Number(p.percentage_cdi) : Number(p.percentage_year) || 0;
     if (!compras.length) { fora.push(p.ticker); continue; }
+    entendido.push(`"${p.ticker}" → ${produto} ${p.emitter || ''}, ${ind === 'cdi' ? `${taxa}% do CDI` : ind === 'pre' ? `pré-fixado ${taxa}% ao ano` : ind === 'ipca' ? `IPCA + ${taxa}%` : `Selic + ${taxa}%`}, ${['LCI', 'LCA', 'CRI', 'CRA'].includes(produto) ? 'isento de IR' : 'com IR'}, aplicado R$ ${aplicado}`);
     for (const { x, parte } of lotesAtuais(compras, aplicado, (y) => Number(y.total_raw))) {
       const dia = iso(x.date);
       rf.push({ id: `cart-fixa-${dia}-${x.id}`, produto, nome: p.emitter || '', ind, taxa, valor: Math.round(Number(x.total_raw) * parte * 100) / 100, data: dia, venc: iso(x.due_date), isento: ['LCI', 'LCA', 'CRI', 'CRA'].includes(produto) });
     }
   }
   rf.sort((a, b) => (a.data < b.data ? -1 : 1));
-  return { rf, fora };
+  return { rf, fora, entendido };
 }
+// Conferência da importação pela IA (Claude Haiku, esforço baixo): olha o nome original de cada item e como o
+// robô entendeu. Volta a lista do que parece errado (vazia se está tudo certo ou se a IA não respondeu).
+async function conferir(entendido, fora, rfFora) {
+  if (!process.env.ANTHROPIC_API_KEY || !entendido.length) return [];
+  try {
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic();
+    const r = await client.messages.create({
+      model: 'claude-haiku-5-5',
+      max_tokens: 1500,
+      system: 'Você confere a importação de renda fixa de uma carteira do Investidor10 para um app. Cada linha traz o nome original do item e como o robô entendeu. Aponte só erros claros de interpretação (tipo de produto, indexador, pré ou pós, taxa, vencimento, isenção de IR) comparando com o nome original. Não comente o que está certo. Responda em português do Brasil, frases curtas, sem travessão.',
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: { type: 'object', properties: { problemas: { type: 'array', items: { type: 'string' } } }, required: ['problemas'], additionalProperties: false } } },
+      messages: [{ role: 'user', content: [...entendido, ...(fora.length || rfFora.length ? [`Não entraram: ${[...fora, ...rfFora].join(', ')}`] : [])].join('\n') }],
+    });
+    if (r.stop_reason !== 'end_turn') return [];
+    const j = JSON.parse(r.content.find((b) => b.type === 'text')?.text || '{}');
+    return (j.problemas || []).map((p) => String(p).replace(/\s*[—–]\s*/g, ', ').trim()).filter(Boolean).slice(0, 8);
+  } catch (e) {
+    console.log(`conferência da IA: ${e.message}`);
+    return [];
+  }
+}
+
 // JSON comum → formato do Firestore
 const paraFs = (v) => (v === null || v === undefined ? { nullValue: null }
   : typeof v === 'string' ? { stringValue: v }
@@ -243,7 +269,7 @@ for (const c of carteiras) {
     }
     for (const tk of sumiram) mud.push(`${tk} saiu`);
     // renda fixa (Tesouro, CDB, LCI...): compara pelo que importa pro app
-    const { rf, fora: rfFora } = await rendaFixa(link.id, link.hash);
+    const { rf, fora: rfFora, entendido } = await rendaFixa(link.id, link.hash);
     const chaveRf = (l) => JSON.stringify((l || []).map((x) => [x.produto, x.nome, x.ind, x.taxa, x.valor, x.data, x.venc, x.isento, x.qtd ?? null]));
     // trava: a renda fixa toda sumindo de uma vez é mais provável erro de leitura do que venda de tudo
     const rfSumiu = !rf.length && (c.rf || []).length > 0;
@@ -256,6 +282,12 @@ for (const c of carteiras) {
       campos.pos = { mapValue: { fields: Object.fromEntries(Object.entries(novo).map(([tk, x]) => [tk, { mapValue: { fields: { q: num(x.q), pm: num(x.pm) } } }])) } };
       campos.rf = paraFs(rfSumiu ? c.rf : rf);
       campos.atualizadoEm = { timestampValue: new Date().toISOString() };
+    }
+    // conferência pela IA (só quando mudou algo): avisa se algum item parece mal entendido; não muda nada
+    const duvidas = mud.length ? await conferir(entendido, fora, rfFora) : [];
+    if (duvidas.length) {
+      campos.i10Msg.stringValue += ` Conferir: ${duvidas.join('; ')}`;
+      await telegram(`Carteira de ${nome}: a conferência achou ${duvidas.length === 1 ? 'um item' : 'itens'} pra olhar no painel:\n${duvidas.map((d) => `• ${d}`).join('\n')}`);
     }
     await salvar(campos);
     if (mud.length) {

@@ -184,7 +184,11 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
           I10: ${{ github.event.inputs.investidor10 }}
-        run: node investidor10.mjs
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }} # conferência da importação pela IA
+        run: |
+          H=$(TZ=America/Sao_Paulo date +%H%M)
+          if { [ "$H" -ge 1800 ] || [ "$I10" = "1" ]; } && [ ! -d node_modules/@anthropic-ai/sdk ]; then npm install --no-save --no-audit --no-fund @anthropic-ai/sdk@1.4.0 > /dev/null; fi
+          node investidor10.mjs
       - name: Guardar o histórico novo
         if: hashFiles('.historico-novo') != ''
         uses: actions/cache/save@v4
