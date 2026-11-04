@@ -14,9 +14,11 @@ const ultimoDia = atual.length ? String(atual[atual.length - 1][0]) : '';
 const forcar = process.env.HISTORICO === '1' || atual.length < 5 || !existsSync('site/longo/IFIX.json') || atual.every((v) => v[1] === v[4]);
 if (!forcar && (ultimoDia === hoje || minutos < 18 * 60 + 30)) { console.log('IFIX: já está em dia'); process.exit(0); }
 
+// a B3 às vezes devolve um ano passado vazio ou pela metade: conta como falha e tenta de novo
 async function ano(a) {
   const p = Buffer.from(JSON.stringify({ index: 'IFIX', language: 'pt-br', year: String(a) })).toString('base64');
-  for (let tentativa = 1; tentativa <= 3; tentativa++) {
+  const anoAtual = Number(hoje.slice(0, 4));
+  for (let tentativa = 1; tentativa <= 5; tentativa++) {
     try {
       const r = await fetch(`https://sistemaswebb3-listados.b3.com.br/indexStatisticsProxy/IndexCall/GetPortfolioDay/${p}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
       if (!r.ok) throw new Error(`B3 ${r.status}`);
@@ -30,10 +32,11 @@ async function ano(a) {
           if (n > 0) out.push([`${a}-${String(m).padStart(2, '0')}-${String(linha.day).padStart(2, '0')}`, n]);
         }
       }
+      if (a < anoAtual && a > anoAtual - 5 && out.length < 200) throw new Error(`a B3 devolveu só ${out.length} pregões de ${a}`);
       return out;
     } catch (e) {
-      if (tentativa === 3) throw e;
-      await new Promise((ok) => setTimeout(ok, 2000 * tentativa));
+      if (tentativa === 5) throw e;
+      await new Promise((ok) => setTimeout(ok, 3000 * tentativa));
     }
   }
   return [];

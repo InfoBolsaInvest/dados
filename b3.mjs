@@ -39,7 +39,7 @@ for (const l of txt.split(/\r?\n/)) {
   // sem as marcas de "ex" da especificação (ER, EJ, ED...), que mudam de um dia para o outro
   const nome = `${l.slice(27, 39)} ${l.slice(39, 49)}`.split(/\s+/).filter((p) => p && !/^E[A-Z]{1,2}$/.test(p)).join(' ');
   if (nome && !(pregao[nome] || []).includes(tk)) pregao[nome] = [...(pregao[nome] || []), tk].sort();
-  if (catalogo.a[tk]) continue;
+  if (catalogo.a[tk] || tk === 'IBOV11') continue; // IBOV11 é o Ibovespa, não ativo
   const fech = Number(l.slice(108, 121)) / 100;
   const vol = Number(l.slice(152, 170)); // quantidade de ações negociadas (igual à da brapi; 170-188 é o volume em reais)
   if (!(fech > 0)) continue;
