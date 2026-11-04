@@ -22,6 +22,13 @@ const EXTERIOR = [
 ];
 // Fed e BCE: lidos do site oficial a cada rodada; estas são a reserva (conferidas nos sites em 03/11/2026)
 const FED_RESERVA = ['2026-12-09', '2027-01-27', '2027-03-17', '2027-04-28', '2027-06-09', '2027-07-28', '2027-09-15', '2027-10-27', '2027-12-08'];
+// IBGE: a API bloqueia quem acessa de fora do Brasil (os servidores do GitHub ficam nos EUA), então quase sempre
+// vale esta reserva, tirada da mesma API daqui do Brasil. [dia, indicador, mês de referência]. Quando faltar
+// IPCA nos próximos 40 dias o passo falha de propósito e o Telegram avisa: é hora de completar a lista.
+const IBGE_RESERVA = [
+  ['2026-11-12', 'IPCA', 10], ['2026-11-26', 'IPCA-15', 11], ['2026-12-02', 'PIB', 7], ['2026-12-11', 'IPCA', 11],
+  ['2026-12-23', 'IPCA-15', 12], ['2027-01-12', 'IPCA', 12], ['2027-03-02', 'PIB', 10],
+];
 const BCE_RESERVA = ['2026-12-17', '2027-02-04', '2027-03-18', '2027-04-29', '2027-06-10', '2027-07-22', '2027-09-09', '2027-10-28', '2027-12-16'];
 // BLS (órgão de estatística dos EUA): o site bloqueia robôs, então as datas ficam aqui. Rever todo ano (o BLS
 // publica o ano seguinte no fim do ano). Conferidas em bls.gov em 03/11/2026. [data, mês de referência]
@@ -76,6 +83,7 @@ for (const d of bce) ev.push({ d, t: 'Decisão de juros na Europa (BCE)', s: 'Me
 for (const [d, m] of CPI_EUA) ev.push({ d, t: `Inflação nos EUA (CPI de ${MESES[m]})`, s: 'Se vier alta, o juro americano tende a ficar alto por mais tempo, o que costuma pesar no dólar e na bolsa daqui' });
 for (const d of EMPREGO_EUA) ev.push({ d, t: 'Emprego nos EUA (payroll)', s: 'Mostra a força da economia americana; costuma mexer com o dólar' });
 
+const ibge = [];
 try {
   const fim = new Date(Date.now() + 200 * 86400 * 1000);
   const br = (d) => `${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}-${d.getUTCFullYear()}`;
@@ -86,14 +94,24 @@ try {
     const dia = (x.data_divulgacao || '').slice(0, 10);
     if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dia)) continue;
     const d = `${dia.slice(6)}-${dia.slice(3, 5)}-${dia.slice(0, 2)}`;
-    const mes = MESES[(Number(x.mes_referencia_inicio) || 0) - 1];
-    if (/Consumidor Amplo 15$/.test(nome)) ev.push({ d, t: `IPCA-15${mes ? ' de ' + mes : ''}`, s: 'Prévia da inflação do mês' });
-    else if (/Consumidor Amplo$/.test(nome)) ev.push({ d, t: `IPCA${mes ? ' de ' + mes : ''}`, s: 'A inflação oficial, que o Copom olha pra decidir o juro' });
-    else if (/Produto Interno Bruto/i.test(nome) && /Trimestral/i.test(nome)) ev.push({ d, t: 'PIB do trimestre', s: 'Mostra se a economia cresceu ou encolheu' });
+    const tipo = /Consumidor Amplo 15$/.test(nome) ? 'IPCA-15' : /Consumidor Amplo$/.test(nome) ? 'IPCA'
+      : /Contas Nacionais Trimestrais/i.test(nome) || (/Produto Interno Bruto/i.test(nome) && /Trimestral/i.test(nome)) ? 'PIB' : '';
+    if (tipo) ibge.push([d, tipo, Number(x.mes_referencia_inicio) || 0]);
   }
-} catch (e) { console.log(`IBGE: ${e.message}`); }
+  if (!ibge.some((x) => x[1] === 'IPCA')) throw new Error('veio sem IPCA');
+  console.log(`IBGE: ${ibge.length} datas`);
+} catch (e) { console.log(`IBGE: ${e.message}, usei a reserva`); ibge.splice(0, ibge.length, ...IBGE_RESERVA); }
+for (const [d, tipo, m] of ibge) {
+  const mes = MESES[m - 1];
+  // PIB: o mês de referência é o 1º do trimestre (7 = 3º trimestre)
+  if (tipo === 'PIB') ev.push({ d, t: `PIB do ${m ? Math.ceil(m / 3) + 'º ' : ''}trimestre`, s: 'Mostra se a economia cresceu ou encolheu' });
+  else if (tipo === 'IPCA-15') ev.push({ d, t: `IPCA-15${mes ? ' de ' + mes : ''}`, s: 'Prévia da inflação do mês' });
+  else ev.push({ d, t: `IPCA${mes ? ' de ' + mes : ''}`, s: 'A inflação oficial, que o Copom olha pra decidir o juro' });
+}
 
 const vistos = new Set();
 const lista = ev.filter((e) => e.d >= hoje && !vistos.has(e.d + e.t) && vistos.add(e.d + e.t)).sort((a, b) => (a.d < b.d ? -1 : 1));
 writeFileSync('site/calendario.json', JSON.stringify(lista));
 console.log(`ok: agenda com ${lista.length} eventos`);
+const em40 = new Date(Date.now() + 40 * 86400 * 1000).toISOString().slice(0, 10);
+if (!ibge.some((x) => x[1] === 'IPCA' && x[0] >= hoje && x[0] <= em40)) throw new Error('sem data de IPCA nos próximos 40 dias: completar IBGE_RESERVA em calendario.mjs');
