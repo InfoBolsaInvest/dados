@@ -63,9 +63,12 @@ async function avisarContas(uids, titulo, texto, tela) {
 }
 
 // link público: https://investidor10.com.br/wallet/public/{id}?h={hash}
+// (carteira aberta a todos vem sem o "?h=": aí o código fica vazio e a leitura funciona igual)
 function lerLink(link) {
-  const m = /wallet\/public\/(\d+)[^?]*\?(?:.*&)?h=([0-9a-f]+)/i.exec(link || '');
-  return m ? { id: m[1], hash: m[2] } : null;
+  const m = /wallet\/public\/(\d+)/i.exec(link || '');
+  if (!m) return null;
+  const h = /[?&]h=([0-9a-f]+)/i.exec(link);
+  return { id: m[1], hash: h ? h[1] : '' };
 }
 
 // posições de um tipo; erro de leitura vira exceção (a carteira não é mexida)
