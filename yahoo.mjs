@@ -35,12 +35,18 @@ function velas(res) {
   t.forEach((s, i) => {
     const c = q.close?.[i];
     if (!(c > 0)) return;
-    const dia = new Date(s * 1000 + off).toISOString().slice(0, 10);
+    // + 12 h: a vela do dólar vem às 23h de Londres do dia anterior e a semanal da bolsa de fora no domingo
+    const dia = new Date(s * 1000 + off + 12 * 3600 * 1000).toISOString().slice(0, 10);
     const r2 = (x) => Math.round((x || c) * 10000) / 10000;
     const v = [dia, r2(q.open?.[i]), r2(q.high?.[i]), r2(q.low?.[i]), r2(c)];
     if (out.length && out[out.length - 1][0] === dia) out[out.length - 1] = v; else out.push(v);
   });
-  return out;
+  // ponto errado do Yahoo: uma vela sozinha muito longe das duas vizinhas, que estão perto uma da outra
+  return out.filter((v, i) => {
+    const a = out[i - 1], b = out[i + 1];
+    if (!a || !b || Math.abs(b[4] / a[4] - 1) > 0.2) return true;
+    return Math.abs(v[4] / a[4] - 1) < 0.5;
+  });
 }
 
 mkdirSync('site/historico', { recursive: true });

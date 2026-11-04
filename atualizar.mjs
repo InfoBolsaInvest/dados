@@ -44,6 +44,9 @@ function titulo(s) {
     .join(' ');
 }
 
+// a brapi lista o Ibovespa como se fosse um fundo (IBOV11): não é ativo para comprar
+const FORA_DA_LISTA = new Set(['IBOV11']);
+
 function limparNome(nome, tk, sub) {
   if (!nome || nome === tk) return tk;
   let n = nome.toUpperCase();
@@ -113,6 +116,7 @@ if (lista.length < MINIMO_ATIVOS) throw new Error(`a brapi trouxe só ${lista.le
 const q = {};
 const a = {};
 for (const it of lista) {
+  if (FORA_DA_LISTA.has(it.stock)) continue;
   q[it.stock] = [it.close, Math.round((it.change || 0) * 100) / 100];
   const tipo = tipoDe(it.subType, it.type);
   const temLogo = LOGO_DE[it.stock] || (it.logo && !it.logo.endsWith('/BRAPI.svg') && !LOGO_RUIM.has(it.stock) ? 1 : 0);

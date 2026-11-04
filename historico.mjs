@@ -58,12 +58,17 @@ writeFileSync('site/mercado.json', JSON.stringify(mercado));
 const agora = new Date();
 const minutosBR = ((agora.getUTCHours() + 21) % 24) * 60 + agora.getUTCMinutes();
 const ultimo = existsSync('site/historico/indice.json') ? JSON.parse(readFileSync('site/historico/indice.json', 'utf8')).atualizadoEm : '';
-const jaFeito = ultimo && diaBR(new Date(ultimo)) === diaBR(agora);
+// feito hoje depois do fechamento (a rodada forçada de tarde deixaria a vela do dia pela metade)
+const minutosDe = (d) => ((d.getUTCHours() + 21) % 24) * 60 + d.getUTCMinutes();
+const jaFeito = ultimo && diaBR(new Date(ultimo)) === diaBR(agora) && minutosDe(new Date(ultimo)) >= 18 * 60 + 30;
 const forcar = process.env.HISTORICO === '1' || !ultimo;
 if (!forcar && (jaFeito || minutosBR < 18 * 60 + 30)) { console.log('ok: Ibovespa e dólar'); process.exit(0); }
 
 const cat = JSON.parse(readFileSync('site/catalogo.json', 'utf8')).a;
-const porVolume = Object.keys(cat).sort((a, b) => cat[b][4] - cat[a][4]);
+// os mais negociados em reais (volume em ações vezes o preço): ação barata com muito volume não toma o lugar de ETF e BDR
+const cot = existsSync('site/cotacoes.json') ? JSON.parse(readFileSync('site/cotacoes.json', 'utf8')).q : {};
+const emReais = (tk) => (cat[tk][4] || 0) * (cot[tk]?.[0] || 0);
+const porVolume = Object.keys(cat).sort((a, b) => emReais(b) - emReais(a));
 // o IFIX vem da B3 (ifix.mjs): a brapi só tem o último dia dele
 const lista = [...new Set(['^BVSP', ...SEMPRE.filter((t) => cat[t]), ...porVolume])].slice(0, QUANTOS + 2);
 

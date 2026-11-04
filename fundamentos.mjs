@@ -229,12 +229,21 @@ writeFileSync('.cvm-codigos.json', JSON.stringify(codigoCvm));
 // histórico longo de proventos, um arquivo por ativo. A B3 só mostra uns 12 meses: o robô junta com o que já
 // tinha guardado (cache do Actions, junto com o histórico de preços) e o histórico cresce com o tempo. Quem falhou
 // hoje continua com o arquivo de antes.
+// Sem o arquivo aqui (o cache do Actions sumiu), vale o publicado: o histórico não volta a ter só 12 meses.
 mkdirSync('site/proventos', { recursive: true });
 let longos = 0;
+const publicado = async (tk) => { try { const r = await fetch(`${SITE}/proventos/${tk}.json`); return r.ok ? await r.json() : []; } catch { return []; } };
+const tksLongos = Object.keys(todos).filter((tk) => cat[tk]);
+const deFora = {};
+const faltam = tksLongos.filter((tk) => !existsSync(`site/proventos/${tk}.json`));
+for (let i = 0; i < faltam.length; i += 10) await Promise.all(faltam.slice(i, i + 10).map(async (tk) => { deFora[tk] = await publicado(tk); }));
+if (faltam.length) console.log(`proventos longos: ${faltam.length} vieram do site publicado`);
 for (const [tk, lista] of Object.entries(todos)) {
   if (!cat[tk]) continue;
   const arq = `site/proventos/${tk}.json`;
-  const antes = existsSync(arq) ? JSON.parse(readFileSync(arq, 'utf8')) : [];
+  // dentro do período que a B3 mostra hoje vale só a lista dela (provento que mudou de data ou valor não fica duas vezes)
+  const desde = lista.map((p) => p[0]).sort()[0];
+  const antes = (existsSync(arq) ? JSON.parse(readFileSync(arq, 'utf8')) : deFora[tk] || []).filter((p) => !desde || p[0] < desde);
   const vistos = new Set();
   // o mesmo provento: mesma data com, pagamento, tipo e valor (a empresa pode pagar dois JCP no mesmo dia)
   const l = [...lista, ...antes].filter((p) => { const k = `${p[0]}|${p[1]}|${p[3]}|${p[2]}`; if (vistos.has(k)) return false; vistos.add(k); return true; }).sort((x, y) => (x[0] < y[0] ? 1 : -1));

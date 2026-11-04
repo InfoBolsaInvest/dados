@@ -42,6 +42,11 @@ async function ano(a) {
 const anoAtual = Number(hoje.slice(0, 4));
 const dias = (await Promise.all([0, 1, 2, 3, 4, 5].map((k) => ano(anoAtual - k)))).flat().sort((x, y) => (x[0] < y[0] ? -1 : 1));
 if (dias.length < 50) throw new Error(`a B3 devolveu só ${dias.length} dias`);
+// ano passado com poucos pregões é resposta pela metade da B3: sem regravar, fica o arquivo de antes
+for (let a = anoAtual - 4; a < anoAtual; a++) {
+  const n = dias.filter(([d]) => d.startsWith(String(a))).length;
+  if (n < 200) throw new Error(`a B3 devolveu só ${n} pregões de ${a}`);
+}
 
 // diário: últimos ~3 meses (mesmo tamanho dos outros históricos), [dia, abertura, máxima, mínima, fechamento].
 // A B3 só dá o fechamento: cada vela abre no fechamento do dia anterior (senão o candle vira um tracinho)

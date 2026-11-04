@@ -15,8 +15,11 @@ const agora = new Date();
 const hoje = diaBR(agora);
 const minutosBR = ((agora.getUTCHours() + 21) % 24) * 60 + agora.getUTCMinutes();
 mkdirSync('cache-b3', { recursive: true });
-const marca = existsSync('cache-b3/feito.json') ? JSON.parse(readFileSync('cache-b3/feito.json', 'utf8')).dia : '';
-if (process.env.HISTORICO !== '1' && (marca === hoje || (marca && minutosBR < 18 * 60 + 30))) { console.log('ok: histórico da B3 de hoje já feito'); process.exit(0); }
+const feito = existsSync('cache-b3/feito.json') ? JSON.parse(readFileSync('cache-b3/feito.json', 'utf8')) : {};
+const marca = feito.dia || '';
+// a rodada forçada de tarde (HISTORICO=1) não conta como a do dia: a do fechamento roda de novo
+const doDia = marca === hoje && feito.depois !== false;
+if (process.env.HISTORICO !== '1' && (doDia || (marca && minutosBR < 18 * 60 + 30))) { console.log('ok: histórico da B3 de hoje já feito'); process.exit(0); }
 
 const cat = JSON.parse(readFileSync('site/catalogo.json', 'utf8')).a;
 const fund = existsSync('site/fundamentos.json') ? JSON.parse(readFileSync('site/fundamentos.json', 'utf8')).a : {};
@@ -47,6 +50,7 @@ async function baixar(ano) {
 async function lerAno(ano, aoLer) {
   await baixar(ano);
   const unzip = spawn('unzip', ['-p', '.cotahist-ano.zip']);
+  const fim = new Promise((ok) => unzip.on('close', ok));
   const linhas = createInterface({ input: unzip.stdout });
   for await (const l of linhas) {
     if (!l.startsWith('01') || l.slice(24, 27) !== '010') continue;
@@ -57,6 +61,8 @@ async function lerAno(ano, aoLer) {
     if (!(c > 0)) continue;
     aoLer(tk, d, [preco(l.slice(56, 69)) || c, preco(l.slice(69, 82)) || c, preco(l.slice(82, 95)) || c, c]);
   }
+  const codigo = await fim;
+  if (codigo !== 0) throw new Error(`COTAHIST ${ano}: unzip saiu com ${codigo}`);
 }
 
 // junta os pregões em semanas: abertura da primeira, máxima, mínima e fechamento da última
@@ -93,14 +99,36 @@ const passados = [];
 for (let ano = anoAtual - 5; ano < anoAtual; ano++) passados.push(JSON.parse(readFileSync(`cache-b3/${ano}.json`, 'utf8')));
 const anterior = passados[passados.length - 1] || {};
 
-// divide o preço de antes de cada evento pela proporção (desdobramento 1 para 4: o preço antigo vira 1/4)
-function ajustar(tk, linhas) {
+// divide o preço de antes de cada evento pela proporção (desdobramento 1 para 4: o preço antigo vira 1/4). Na vela
+// semanal (marcada na segunda), vale a sexta: a semana que fecha depois da data com já tem o preço novo.
+const sexta = (d) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + 4); return x.toISOString().slice(0, 10); };
+function ajustar(tk, linhas, semanal = false) {
   const evs = (fund[tk]?.e || []).filter((e) => e[2] > 0);
   if (!evs.length) return linhas;
   return linhas.map(([d, ...v]) => {
-    const f = evs.filter((e) => d <= e[0]).reduce((m, e) => m * e[2], 1);
+    const ref = semanal ? sexta(d) : d;
+    const f = evs.filter((e) => ref <= e[0]).reduce((m, e) => m * e[2], 1);
     return f === 1 ? [d, ...v] : [d, ...v.map((x) => Math.round((x / f) * 1e4) / 1e4)];
   });
+}
+
+// desdobramento ou grupamento que a B3 não listou (acontece): um salto de uma vela para a outra numa proporção redonda
+// (3, 4, 5, 10, 20... ou o inverso) que continua nas velas seguintes. Só proporções a partir de 3, bem perto da redonda:
+// tombo de verdade (como -77% num dia) não é ajustado.
+const REDONDAS = [3, 4, 5, 6, 8, 10, 15, 20, 25, 30, 40, 50, 100, 200];
+function degraus(linhas) {
+  const out = linhas.map((x) => [...x]);
+  for (let i = out.length - 1; i >= 1; i--) {
+    const r = out[i][4] / out[i - 1][4];
+    const k = REDONDAS.find((n) => Math.abs(r * n - 1) < 0.06 || Math.abs(r / n - 1) < 0.06);
+    if (!k) continue;
+    const prop = r > 1 ? k : 1 / k;
+    // o novo nível continua (a vela seguinte perto da de agora), senão é ponto errado e não degrau
+    if (out[i + 1] && Math.abs(out[i + 1][4] / out[i][4] - 1) > 0.4) continue;
+    if (out[i - 2] && Math.abs(out[i - 1][4] / out[i - 2][4] - 1) > 0.4) continue; // e o nível antigo vinha de antes
+    for (let j = 0; j < i; j++) for (let c = 1; c <= 4; c++) out[j][c] = Math.round(out[j][c] * prop * 1e4) / 1e4;
+  }
+  return out;
 }
 
 mkdirSync('site/historico', { recursive: true });
@@ -109,19 +137,21 @@ const inicio5 = `${anoAtual - 5}${hoje.slice(4)}`;
 let diarios = 0, semanais = 0;
 for (const tk of Object.keys(cat)) {
   const doAno = (atual[tk] || []).sort((a, b) => (a[0] < b[0] ? -1 : 1));
-  if (!daBrapi.has(tk)) {
-    const d = ajustar(tk, [...(anterior[tk]?.d || []), ...doAno]).slice(-66);
+  // quem está na lista da brapi mas ficou sem arquivo (a brapi não trouxe) também sai daqui
+  if (!daBrapi.has(tk) || !existsSync(`site/historico/${tk}.json`)) {
+    const d = degraus(ajustar(tk, [...(anterior[tk]?.d || []), ...doAno])).slice(-66);
     if (d.length >= 5) { writeFileSync(`site/historico/${tk}.json`, JSON.stringify(d)); diarios++; }
   }
-  if (!doYahoo.has(tk)) {
-    const s = ajustar(tk, [...passados.flatMap((p) => p[tk]?.s || []), ...semanal(doAno)].filter((x) => x[0] >= inicio5));
+  if (!doYahoo.has(tk) || !existsSync(`site/longo/${tk}.json`)) {
+    // o ano atual: ajusta o diário e depois junta em semanas; os anos passados já vêm semanais
+    const s = [...ajustar(tk, passados.flatMap((p) => p[tk]?.s || []), true), ...semanal(ajustar(tk, doAno))].filter((x) => x[0] >= inicio5);
     // a semana da virada do ano pode vir em dois pedaços (um de cada arquivo): junta
     const juntas = [];
     for (const x of s) { const u = juntas[juntas.length - 1]; if (u && u[0] === x[0]) { u[2] = Math.max(u[2], x[2]); u[3] = Math.min(u[3], x[3]); u[4] = x[4]; } else juntas.push([...x]); }
-    if (juntas.length > 10) { writeFileSync(`site/longo/${tk}.json`, JSON.stringify(juntas)); semanais++; }
+    if (juntas.length > 10) { writeFileSync(`site/longo/${tk}.json`, JSON.stringify(degraus(juntas))); semanais++; }
   }
 }
-writeFileSync('cache-b3/feito.json', JSON.stringify({ dia: hoje }));
+writeFileSync('cache-b3/feito.json', JSON.stringify({ dia: hoje, depois: minutosBR >= 18 * 60 + 30 }));
 writeFileSync('.b3anos-novo', '1');
 writeFileSync('.historico-novo', '1');
 console.log(`B3: gráfico diário de ${diarios} e semanal de ${semanais} ativos que a brapi e o Yahoo não cobrem`);

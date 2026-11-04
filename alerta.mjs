@@ -25,6 +25,7 @@ const NOMES = {
   fund: 'Proventos e valor patrimonial',
   eventos: 'Custo atribuído das bonificações',
   b3hist: 'Gráfico pelo arquivo anual da B3',
+  faltam: 'Gráfico dos que faltavam (Yahoo)',
   agenda: 'Agenda',
   rf: 'Renda fixa',
   videos: 'Vídeos do canal',

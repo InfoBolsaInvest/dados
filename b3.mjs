@@ -41,12 +41,22 @@ for (const l of txt.split(/\r?\n/)) {
   if (nome && !(pregao[nome] || []).includes(tk)) pregao[nome] = [...(pregao[nome] || []), tk].sort();
   if (catalogo.a[tk]) continue;
   const fech = Number(l.slice(108, 121)) / 100;
-  const vol = Math.round(Number(l.slice(170, 188)) / 100);
+  const vol = Number(l.slice(152, 170)); // quantidade de ações negociadas (igual à da brapi; 170-188 é o volume em reais)
   if (!(fech > 0)) continue;
   // o nome fica igual ao ticker: o nomes.mjs busca o nome certo no Yahoo
   catalogo.a[tk] = [tk, TIPO[bdi] || (tk.endsWith('11') ? 'fii' : 'acao'), '', 0, vol];
   cotacoes.q[tk] = [fech, 0];
   novos.push(tk);
+}
+// o arquivo da B3 é do pregão anterior: a cotação de agora e a variação vêm do Yahoo, e o logo da brapi se existir
+for (const tk of novos.slice(0, 30)) {
+  try {
+    const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${tk}.SA?range=5d&interval=1d`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const m = r.ok ? (await r.json())?.chart?.result?.[0]?.meta : null;
+    const ant = m?.chartPreviousClose || m?.previousClose;
+    if (m?.regularMarketPrice > 0 && ant > 0) cotacoes.q[tk] = [m.regularMarketPrice, Math.round((m.regularMarketPrice / ant - 1) * 10000) / 100];
+  } catch {}
+  try { if ((await fetch(`https://icons.brapi.dev/icons/${tk}.svg`, { method: 'HEAD' })).ok) catalogo.a[tk][3] = 1; } catch {}
 }
 if (novos.length) {
   cotacoes.total = Object.keys(cotacoes.q).length;
