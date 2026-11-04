@@ -1,7 +1,7 @@
 // Histórico do IFIX direto da B3 (as fontes grátis de cotação não têm): a B3 publica o fechamento de cada dia
 // do ano em "Estatísticas dos índices". Monta o gráfico diário de 3 meses (historico/IFIX.json) e o semanal de
 // 5 anos (longo/IFIX.json), no mesmo formato dos outros. 1x por dia depois das 18h30, ou se ainda não existe.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const agora = new Date();
 const brt = new Date(agora.getTime() - 3 * 3600 * 1000);
@@ -60,6 +60,7 @@ for (const [d, c] of dias) {
   }
 }
 const semanal = [...semanas.values()].slice(-262);
+mkdirSync('site/longo', { recursive: true });
 writeFileSync(ARQ, JSON.stringify(diario));
 writeFileSync('site/longo/IFIX.json', JSON.stringify(semanal));
 writeFileSync('.historico-novo', '1'); // guarda no cache do Actions

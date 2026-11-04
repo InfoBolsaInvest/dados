@@ -80,7 +80,9 @@ jobs:
           path: .alerta
           key: alerta-${{ github.run_id }}
           restore-keys: alerta-
-      - name: Trazer o histórico guardado
+      # (uma vez só, 04/11/2026: os anos da B3 ficaram no cache junto com o histórico; daqui em diante vão em um
+      # cache só deles. A lista de pastas faz parte do cache: mudou a lista, o cache antigo não volta.)
+      - name: Trazer os anos da B3 do cache antigo
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -89,6 +91,22 @@ jobs:
             site/tesouro
             site/proventos
             cache-b3
+          key: historico-${{ github.run_id }}
+          restore-keys: historico-
+      - name: Trazer os anos da B3 guardados
+        uses: actions/cache/restore@v4
+        with:
+          path: cache-b3
+          key: b3anos-${{ github.run_id }}
+          restore-keys: b3anos-
+      - name: Trazer o histórico guardado
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            site/historico
+            site/longo
+            site/tesouro
+            site/proventos
           key: historico-${{ github.run_id }}
           restore-keys: historico-
       - name: Buscar cotações
@@ -218,8 +236,13 @@ jobs:
             site/longo
             site/tesouro
             site/proventos
-            cache-b3
           key: historico-${{ github.run_id }}
+      - name: Guardar os anos da B3
+        if: hashFiles('.b3anos-novo') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: cache-b3
+          key: b3anos-${{ github.run_id }}
       - name: Páginas fixas (política de privacidade e exclusão de conta)
         run: cp paginas/*.html site/
       - uses: actions/configure-pages@v5

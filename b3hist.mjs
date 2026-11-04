@@ -27,11 +27,25 @@ const doYahoo = lerIndice('site/longo/indice.json'); // e esses o semanal
 const segunda = (iso) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10); };
 const preco = (s) => Number(s) / 100;
 
+// baixa o arquivo do ano; a B3 às vezes corta a conexão no meio (arquivo de 100 MB): tenta de novo
+async function baixar(ano) {
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      const r = await fetch(`https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A${ano}.ZIP`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!r.ok) throw new Error(String(r.status));
+      writeFileSync('.cotahist-ano.zip', Buffer.from(await r.arrayBuffer()));
+      return;
+    } catch (e) {
+      if (tentativa >= 4) throw new Error(`COTAHIST ${ano}: ${e.message}`);
+      console.log(`COTAHIST ${ano}: ${e.message}, tentando de novo`);
+      await new Promise((ok) => setTimeout(ok, 30000 * tentativa));
+    }
+  }
+}
+
 // lê um ano do arquivo da B3, linha a linha (o arquivo aberto passa de 500 MB): só mercado à vista
 async function lerAno(ano, aoLer) {
-  const r = await fetch(`https://bvmf.bmfbovespa.com.br/InstDados/SerHist/COTAHIST_A${ano}.ZIP`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-  if (!r.ok) throw new Error(`COTAHIST ${ano}: ${r.status}`);
-  writeFileSync('.cotahist-ano.zip', Buffer.from(await r.arrayBuffer()));
+  await baixar(ano);
   const unzip = spawn('unzip', ['-p', '.cotahist-ano.zip']);
   const linhas = createInterface({ input: unzip.stdout });
   for await (const l of linhas) {
@@ -70,6 +84,7 @@ for (let ano = anoAtual - 5; ano < anoAtual; ano++) {
     resumo[tk] = { s: semanal(l), d: ano === anoAtual - 1 ? l.slice(-100) : [] };
   }
   writeFileSync(arq, JSON.stringify(resumo));
+  writeFileSync('.b3anos-novo', '1'); // guarda no cache do Actions
   console.log(`B3 ${ano}: ${Object.keys(resumo).length} ativos guardados`);
 }
 const atual = {};
@@ -107,5 +122,6 @@ for (const tk of Object.keys(cat)) {
   }
 }
 writeFileSync('cache-b3/feito.json', JSON.stringify({ dia: hoje }));
+writeFileSync('.b3anos-novo', '1');
 writeFileSync('.historico-novo', '1');
 console.log(`B3: gráfico diário de ${diarios} e semanal de ${semanais} ativos que a brapi e o Yahoo não cobrem`);
