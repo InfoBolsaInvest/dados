@@ -9,3 +9,7 @@ gha-creds-*.json
 leitor/node_modules/
 leitor/.wrangler/
 leitor/.env
+.cotahist-ano.zip
+.ipe.zip
+.cvm-codigos.json
+cache-b3/

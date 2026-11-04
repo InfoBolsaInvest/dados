@@ -24,6 +24,7 @@ const NOMES = {
   nomes: 'Nomes de ativos novos',
   fund: 'Proventos e valor patrimonial',
   eventos: 'Custo atribuído das bonificações',
+  b3hist: 'Gráfico pelo arquivo anual da B3',
   agenda: 'Agenda',
   rf: 'Renda fixa',
   videos: 'Vídeos do canal',
