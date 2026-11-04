@@ -6,7 +6,7 @@
 // (e: desdobramento, grupamento e bonificação, ver guardarEv)
 // Precisa do .isin.json do b3.mjs e do site/catalogo.json do atualizar.mjs.
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const SITE = 'https://infobolsainvest.github.io/dados';
 const diaBR = (d) => new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -59,14 +59,17 @@ for (const [tk, [, tipo]] of Object.entries(cat)) {
   else if (tipo === 'fii' || tipo === 'fiagro' || tipo === 'fundo') fundos.add(tk.slice(0, 4));
 }
 const prov = {};
+const todos = {}; // tudo o que a B3 mostra hoje (site/proventos/{TK}.json, para o gráfico de 5 anos e o IR)
 let consultas = 0, falhas = 0;
 const falhouB3 = new Set(); // prefixos (PETR, MXRF...) cuja consulta de proventos falhou hoje
 function guardar(lista) {
   for (const d of lista || []) {
     const tk = tickerDoIsin[d.isinCode];
     const com = data(d.lastDatePrior), pag = data(d.paymentDate), v = valor(d.rate);
-    if (!tk || !com || !(v > 0) || com < limite) continue;
+    if (!tk || !com || !(v > 0)) continue;
     const tipo = TIPO[(d.label || '').toUpperCase()] || (d.label || '').trim();
+    (todos[tk] ||= []).push([com, data(d.paymentDate), Math.round(v * 1e8) / 1e8, tipo]);
+    if (com < limite) continue;
     (prov[tk] ||= []).push([com, pag, Math.round(v * 1e8) / 1e8, tipo, data(d.approvedOn)]); // o 5º campo (aprovado em) é para o aviso de anúncio
   }
 }
@@ -223,4 +226,21 @@ for (const [tk, x] of Object.entries(anterior.a || {})) {
 }
 writeFileSync('site/fundamentos.json', JSON.stringify({ atualizadoEm: agora.toISOString(), a }));
 writeFileSync('.cvm-codigos.json', JSON.stringify(codigoCvm));
+// histórico longo de proventos, um arquivo por ativo. A B3 só mostra uns 12 meses: o robô junta com o que já
+// tinha guardado (cache do Actions, junto com o histórico de preços) e o histórico cresce com o tempo. Quem falhou
+// hoje continua com o arquivo de antes.
+mkdirSync('site/proventos', { recursive: true });
+let longos = 0;
+for (const [tk, lista] of Object.entries(todos)) {
+  if (!cat[tk]) continue;
+  const arq = `site/proventos/${tk}.json`;
+  const antes = existsSync(arq) ? JSON.parse(readFileSync(arq, 'utf8')) : [];
+  const vistos = new Set();
+  // o mesmo provento: mesma data com, pagamento, tipo e valor (a empresa pode pagar dois JCP no mesmo dia)
+  const l = [...lista, ...antes].filter((p) => { const k = `${p[0]}|${p[1]}|${p[3]}|${p[2]}`; if (vistos.has(k)) return false; vistos.add(k); return true; }).sort((x, y) => (x[0] < y[0] ? 1 : -1));
+  writeFileSync(arq, JSON.stringify(l));
+  longos++;
+}
+writeFileSync('.historico-novo', '1');
+console.log(`proventos longos: ${longos} ativos`);
 console.log(`ok: fundamentos de ${Object.keys(a).length} ativos`);

@@ -87,6 +87,7 @@ jobs:
             site/historico
             site/longo
             site/tesouro
+            site/proventos
           key: historico-${{ github.run_id }}
           restore-keys: historico-
       - name: Buscar cotações
@@ -208,6 +209,7 @@ jobs:
             site/historico
             site/longo
             site/tesouro
+            site/proventos
           key: historico-${{ github.run_id }}
       - name: Páginas fixas (política de privacidade e exclusão de conta)
         run: cp paginas/*.html site/

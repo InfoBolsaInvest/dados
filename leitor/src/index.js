@@ -1,6 +1,6 @@
 // Leitor de notas de corretagem (Cloudflare Worker, plano grátis): o app manda o PDF da nota (padrão Sinacor, o da
 // B3) e recebe na hora as compras e vendas com data, preço e taxas. Fluxo: confere o login do Firebase (token do
-// usuário), conta o limite do dia (20 PDFs por pessoa, no KV LIMITE), manda o PDF para o Claude Haiku e devolve
+// usuário), conta o limite do dia (200 leituras por pessoa, no KV LIMITE), manda o PDF para o Claude Haiku e devolve
 // { e_nota, notas }. A chave da Anthropic fica só aqui, como segredo do Worker (ANTHROPIC_NOTAS_KEY), nunca no app.
 // Da nota só voltam as operações e os custos: nome, CPF e endereço do cliente não saem daqui nem ficam guardados.
 //
@@ -9,7 +9,7 @@
 // com uma checagem rápida de que é base64 puro (sem aspas nem barra, que poderiam mexer no resto do pedido).
 
 const PROJETO = 'infobolsa-investimentos';
-const POR_DIA = 20;
+const POR_DIA = 200; // leituras por dia (o app manda o PDF grande em partes de 15 páginas)
 const MAX_BYTES = 8 * 1024 * 1024;
 const JWKS = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 
