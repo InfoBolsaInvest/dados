@@ -23,6 +23,7 @@ const NOMES = {
   ifix: 'Histórico do IFIX (B3)',
   nomes: 'Nomes de ativos novos',
   fund: 'Proventos e valor patrimonial',
+  eventos: 'Custo atribuído das bonificações',
   agenda: 'Agenda',
   rf: 'Renda fixa',
   videos: 'Vídeos do canal',
@@ -32,7 +33,6 @@ const NOMES = {
   repor: 'Reposição dos arquivos',
   avisos: 'Avisos no celular',
   i10: 'Carteiras dos clientes (Investidor10)',
-  prints: 'Leitura dos prints da corretora',
   publicar: 'Publicação do site',
 };
 

@@ -69,6 +69,23 @@ function guardar(lista) {
     (prov[tk] ||= []).push([com, pag, Math.round(v * 1e8) / 1e8, tipo]);
   }
 }
+// desdobramento, grupamento e bonificação: [data com, tipo, multiplicador da quantidade, aprovado em]. Guarda tudo
+// (são poucos), porque a pessoa pode ter comprado anos atrás. No desdobramento e na bonificação a B3 dá o % de
+// ações novas (300 = cada ação vira 4); no grupamento, a proporção (0,1 = 10 viram 1).
+const EVENTO = { DESDOBRAMENTO: 'desd', GRUPAMENTO: 'grup', BONIFICACAO: 'bon' };
+const ev = {};
+const codigoCvm = {}; // prefixo da empresa -> código na CVM (o eventos.mjs acha o aviso da bonificação por ele)
+function guardarEv(lista) {
+  for (const d of lista || []) {
+    const tipo = EVENTO[(d.label || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()];
+    const tk = tickerDoIsin[d.isinCode] || tickerDoIsin[d.assetIssued];
+    const com = data(d.lastDatePrior), f = valor(d.factor);
+    if (!tipo || !tk || !com || !(f > 0)) continue;
+    const mult = tipo === 'grup' ? f : 1 + f / 100;
+    if (tipo === 'grup' ? mult >= 1 : mult <= 1) continue; // proporção estranha: melhor não aplicar
+    (ev[tk] ||= []).push([com, tipo, Math.round(mult * 1e8) / 1e8, data(d.approvedOn)]);
+  }
+}
 const fila = [
   ...[...empresas].map((c) => ({ prefixo: c, url: `${B3}/listedCompaniesProxy/CompanyCall/GetListedSupplementCompany/${b64({ issuingCompany: c, language: 'pt-br' })}` })),
   ...[...fundos].map((c) => ({ prefixo: c, url: `${B3}/fundsProxy/fundsCall/GetListedSupplementFunds/${b64({ cnpj: '0', identifierFund: c, typeFund: 7 })}` })),
@@ -80,6 +97,9 @@ await Promise.all(Array.from({ length: 6 }, async () => {
     consultas++;
     if (!j) { falhas++; falhouB3.add(prefixo); continue; }
     guardar(Array.isArray(j) ? j[0]?.cashDividends : j.cashDividends);
+    guardarEv(Array.isArray(j) ? j[0]?.stockDividends : j.stockDividends);
+    const cvm = (Array.isArray(j) ? j[0] : j)?.codeCVM;
+    if (cvm && url.includes('CompanyCall')) codigoCvm[prefixo] = String(cvm);
     await espera(100);
   }
 }));
@@ -89,7 +109,11 @@ for (const tk of Object.keys(prov)) {
   prov[tk] = prov[tk].filter((p) => { const k = p.join('|'); if (vistos.has(k)) return false; vistos.add(k); return true; })
     .sort((x, y) => (x[0] < y[0] ? 1 : x[0] > y[0] ? -1 : x[1] < y[1] ? 1 : -1));
 }
-console.log(`proventos: ${consultas} consultas na B3, ${falhas} falharam, ${Object.keys(prov).length} ativos com provento`);
+for (const tk of Object.keys(ev)) {
+  const vistos = new Set();
+  ev[tk] = ev[tk].filter((e) => { const k = `${e[0]}|${e[1]}`; if (vistos.has(k)) return false; vistos.add(k); return true; }).sort((x, y) => (x[0] < y[0] ? 1 : -1));
+}
+console.log(`proventos: ${consultas} consultas na B3, ${falhas} falharam, ${Object.keys(prov).length} ativos com provento, ${Object.keys(ev).length} com desdobramento, grupamento ou bonificação`);
 if (consultas && falhas / consultas > 0.3) throw new Error(`a B3 falhou em ${falhas} de ${consultas} consultas de proventos`);
 
 // ---------- valor patrimonial dos fundos imobiliários (CVM) ----------
@@ -177,10 +201,15 @@ try {
 
 // ---------- junta e publica ----------
 const a = {};
-for (const tk of new Set([...Object.keys(prov), ...Object.keys(vp)])) {
+for (const tk of new Set([...Object.keys(prov), ...Object.keys(vp), ...Object.keys(ev)])) {
   a[tk] = {};
   if (prov[tk]) a[tk].p = prov[tk];
   if (vp[tk]) a[tk].vp = vp[tk];
+  if (ev[tk]) {
+    // o custo atribuído da bonificação (5º campo) vem do eventos.mjs: fica o que já foi achado antes
+    const antes = anterior.a?.[tk]?.e || [];
+    a[tk].e = ev[tk].map((e) => { const x = antes.find((y) => y[0] === e[0] && y[1] === e[1]); return x && x.length > 4 ? [...e, x[4]] : e; });
+  }
 }
 // o que falhou hoje fica com o dado de ontem: o ativo inteiro, ou só a parte que faltou
 // (proventos de quem a consulta na B3 falhou; valor patrimonial quando a CVM ou o Yahoo não responderam)
@@ -188,7 +217,9 @@ for (const [tk, x] of Object.entries(anterior.a || {})) {
   if (!cat[tk]) continue;
   if (!a[tk]) { a[tk] = x; continue; }
   if (!a[tk].p && x.p && falhouB3.has(tk.slice(0, 4))) a[tk].p = x.p;
+  if (!a[tk].e && x.e && falhouB3.has(tk.slice(0, 4))) a[tk].e = x.e;
   if (!a[tk].vp && x.vp) a[tk].vp = x.vp;
 }
 writeFileSync('site/fundamentos.json', JSON.stringify({ atualizadoEm: agora.toISOString(), a }));
+writeFileSync('.cvm-codigos.json', JSON.stringify(codigoCvm));
 console.log(`ok: fundamentos de ${Object.keys(a).length} ativos`);
