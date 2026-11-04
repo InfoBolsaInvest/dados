@@ -20,6 +20,7 @@ const NOMES = {
   b3: 'Conferência com a B3',
   hist: 'Ibovespa, dólar e histórico',
   yahoo: 'Bolsas de fora e 5 anos (Yahoo)',
+  ifix: 'Histórico do IFIX (B3)',
   nomes: 'Nomes de ativos novos',
   fund: 'Proventos e valor patrimonial',
   agenda: 'Agenda',

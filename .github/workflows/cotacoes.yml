@@ -103,6 +103,12 @@ jobs:
           BRAPI_TOKEN: ${{ secrets.BRAPI_TOKEN }}
           HISTORICO: ${{ github.event.inputs.historico }}
         run: node historico.mjs
+      - name: Histórico do IFIX (B3; 1x por dia)
+        id: ifix
+        continue-on-error: true
+        env:
+          HISTORICO: ${{ github.event.inputs.historico }}
+        run: node ifix.mjs
       - name: Dólar, bolsas de fora e 5 anos (Yahoo)
         id: yahoo
         continue-on-error: true
@@ -221,7 +227,7 @@ jobs:
           TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
           # só o resultado de cada passo (as saídas, como a chave do Google, ficam de fora)
           PASSOS: >-
-            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","resumo":"${{ steps.resumo.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
+            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","ifix":"${{ steps.ifix.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","resumo":"${{ steps.resumo.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
           JOB_STATUS: ${{ job.status }}
           EVENTO: ${{ github.event.inputs.relogio == '1' && 'relogio' || github.event_name }}
           MODO: ${{ github.event.inputs.telegram }}
