@@ -21,6 +21,7 @@ const NOMES = {
   hist: 'Ibovespa, dólar e histórico',
   yahoo: 'Bolsas de fora e 5 anos (Yahoo)',
   ifix: 'Histórico do IFIX (B3)',
+  semanal: 'Preços de 20 anos (Yahoo)',
   nomes: 'Nomes de ativos novos',
   fund: 'Proventos e valor patrimonial',
   cnpj: 'CNPJ de cada ativo (aba IR)',
