@@ -23,6 +23,7 @@ const NOMES = {
   ifix: 'Histórico do IFIX (B3)',
   nomes: 'Nomes de ativos novos',
   fund: 'Proventos e valor patrimonial',
+  cnpj: 'CNPJ de cada ativo (aba IR)',
   eventos: 'Custo atribuído das bonificações',
   b3hist: 'Gráfico pelo arquivo anual da B3',
   faltam: 'Gráfico dos que faltavam (Yahoo)',

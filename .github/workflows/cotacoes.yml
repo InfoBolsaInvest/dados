@@ -134,6 +134,12 @@ jobs:
         env:
           FUNDAMENTOS: ${{ github.event.inputs.historico }}
         run: node fundamentos.mjs
+      - name: CNPJ e nome de cada ativo, para a aba IR (CVM e B3; 1x por semana)
+        id: cnpj
+        continue-on-error: true
+        env:
+          CNPJ: ${{ github.event.inputs.historico }}
+        run: node cnpj.mjs
       - name: Custo atribuído das bonificações (avisos da CVM)
         id: eventos
         if: steps.fund.outcome == 'success'
@@ -193,7 +199,7 @@ jobs:
       - name: Repor o que falhou com a versão publicada
         id: repor
         run: |
-          for f in mercado fundamentos isin calendario videos noticias rendafixa resumo pregao; do
+          for f in mercado fundamentos cnpj isin calendario videos noticias rendafixa resumo pregao; do
             [ -f "site/$f.json" ] || curl -sf "https://infobolsainvest.github.io/dados/$f.json" -o "site/$f.json" || echo "sem $f.json"
           done
       - name: Avisos no celular
@@ -261,7 +267,7 @@ jobs:
           TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
           # só o resultado de cada passo (as saídas, como a chave do Google, ficam de fora)
           PASSOS: >-
-            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","ifix":"${{ steps.ifix.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","eventos":"${{ steps.eventos.outcome }}","b3hist":"${{ steps.b3hist.outcome }}","faltam":"${{ steps.faltam.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","resumo":"${{ steps.resumo.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
+            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","ifix":"${{ steps.ifix.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","cnpj":"${{ steps.cnpj.outcome }}","eventos":"${{ steps.eventos.outcome }}","b3hist":"${{ steps.b3hist.outcome }}","faltam":"${{ steps.faltam.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","resumo":"${{ steps.resumo.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
           JOB_STATUS: ${{ job.status }}
           EVENTO: ${{ github.event.inputs.relogio == '1' && 'relogio' || github.event_name }}
           MODO: ${{ github.event.inputs.telegram }}
