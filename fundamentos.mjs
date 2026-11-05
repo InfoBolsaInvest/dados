@@ -6,7 +6,7 @@
 // (e: desdobramento, grupamento e bonificação, ver guardarEv)
 // Precisa do .isin.json do b3.mjs e do site/catalogo.json do atualizar.mjs.
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const SITE = 'https://infobolsainvest.github.io/dados';
 const diaBR = (d) => new Date(d.getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10);
@@ -297,6 +297,23 @@ for (const [tk, lista] of Object.entries(todos)) {
   writeFileSync(arq, JSON.stringify(l));
   longos++;
 }
+// proventos antigos (antigos/{TK}.json, do proventos-antigos.mjs, guardados no git): entra o que for mais antigo que
+// o histórico longo do ativo. O mesmo provento com 1 ou 2 dias de diferença entre as fontes (ou o valor arredondado
+// do Fundamentus) não entra duas vezes. Ativo sem provento nos últimos 12 meses (não está na lista da B3) fica só
+// com os antigos, e o que saiu da bolsa também (MALL11): quem teve recebeu enquanto era negociado.
+const diasEntre = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000;
+let comAntigos = 0;
+for (const f of existsSync('antigos') ? readdirSync('antigos').filter((x) => /^[A-Z0-9]+\.json$/.test(x)) : []) {
+  const tk = f.slice(0, -5);
+  const arq = `site/proventos/${tk}.json`;
+  const atual = existsSync(arq) ? JSON.parse(readFileSync(arq, 'utf8')) : [];
+  const desde = atual.map((p) => p[0]).sort()[0];
+  const igual = (p) => atual.some((a) => a[3] === p[3] && diasEntre(a[0], p[0]) <= 5 && Math.abs(a[2] / p[2] - 1) < 0.01);
+  const velhos = JSON.parse(readFileSync(`antigos/${f}`, 'utf8')).filter((p) => (!desde || p[0] < desde) && !igual(p));
+  if (!velhos.length) continue;
+  writeFileSync(arq, JSON.stringify([...atual, ...velhos].sort((x, y) => (x[0] < y[0] ? 1 : -1))));
+  comAntigos++;
+}
 writeFileSync('.historico-novo', '1');
-console.log(`proventos longos: ${longos} ativos`);
+console.log(`proventos longos: ${longos} ativos (${comAntigos} com os antigos)`);
 console.log(`ok: fundamentos de ${Object.keys(a).length} ativos`);
