@@ -2,7 +2,8 @@
 // B3) e recebe na hora as compras e vendas com data, preço e taxas. Fluxo: confere o login do Firebase (token do
 // usuário), conta o limite do dia (200 leituras por pessoa, no KV LIMITE), manda o PDF para o Claude Haiku e devolve
 // { e_nota, notas }. A chave da Anthropic fica só aqui, como segredo do Worker (ANTHROPIC_NOTAS_KEY), nunca no app.
-// Da nota só voltam as operações e os custos: nome, CPF e endereço do cliente não saem daqui nem ficam guardados.
+// Da nota só voltam as operações, os custos e o CNPJ da corretora: nome, CPF e endereço do cliente não saem daqui nem
+// ficam guardados.
 //
 // Por que fetch direto e não o SDK: o plano grátis do Worker dá ~10 ms de processador por pedido. Montar o pedido no
 // SDK copiaria e varreria o PDF inteiro em JavaScript; aqui o arquivo passa direto, em fluxo, do app para a API, só
@@ -25,6 +26,7 @@ const ESQUEMA = {
         properties: {
           n: { type: 'string' },
           d: { type: 'string' },
+          cnpj_corretora: { type: 'string' },
           compras: NUM,
           vendas: NUM,
           custos: NUM,
@@ -57,7 +59,7 @@ const ESQUEMA = {
             },
           },
         },
-        required: ['n', 'd', 'compras', 'vendas', 'custos', 'irrf', 'liquido', 'dc', 'opc_compras', 'opc_vendas', 'outros', 'ops'],
+        required: ['n', 'd', 'cnpj_corretora', 'compras', 'vendas', 'custos', 'irrf', 'liquido', 'dc', 'opc_compras', 'opc_vendas', 'outros', 'ops'],
         additionalProperties: false,
       },
     },
@@ -67,6 +69,7 @@ const ESQUEMA = {
 };
 const SISTEMA = 'Você lê notas de corretagem (nota de negociação) da bolsa brasileira, no padrão Sinacor da B3. Para cada nota do PDF, devolva:\n'
   + '- n: o Nr. nota. d: a Data pregão, em aaaa-mm-dd.\n'
+  + '- cnpj_corretora: o CNPJ da corretora que emitiu a nota, no cabeçalho junto do nome dela (vazio se não estiver escrito). Nunca o CPF ou o CNPJ do cliente.\n'
   + '- compras e vendas: só os valores das linhas "Compras à vista" e "Vendas à vista" do Resumo dos Negócios.\n'
   + '- opc_compras e opc_vendas: os valores das linhas "Opções - compras" e "Opções - vendas" do Resumo dos Negócios (0 se não houver).\n'
   + '- custos: o total de custos e taxas da nota em reais (taxa de liquidação, taxa de registro, emolumentos, taxa de termo ou opções, taxa A.N.A., corretagem, ISS, impostos e outras), sem o I.R.R.F.\n'
@@ -122,6 +125,7 @@ const normalizar = (notas, opcoes) => (notas || [])
   .map((x) => ({
     n: String(x.n || '').replace(/\D/g, ''),
     d: /^\d{4}-\d{2}-\d{2}$/.test(x.d) ? x.d : '',
+    cor: /^\d{14}$/.test(String(x.cnpj_corretora || '').replace(/\D/g, '')) ? String(x.cnpj_corretora).replace(/\D/g, '') : '', // a corretora, para a declaração
     compras: cent(x.compras), vendas: cent(x.vendas), custos: cent(x.custos), irrf: cent(x.irrf), liquido: cent(x.liquido), dc: x.dc === 'C' ? 'C' : 'D',
     ...(opcoes ? { opcCompras: cent(x.opc_compras), opcVendas: cent(x.opc_vendas) } : {}),
     outros: !!x.outros || (!opcoes && (x.ops || []).some((o) => o.opc && !o.ex)),
