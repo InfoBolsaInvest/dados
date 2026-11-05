@@ -6,12 +6,13 @@
 //   - s: esses desdobramentos e bonificações (fator 2 = cada ação virou 2), para o app voltar ao preço da época.
 // Cada rodada atualiza até POR_RODADA ativos, começando pelos que nunca foram buscados e depois pelos mais antigos:
 // cada ativo é renovado mais ou menos uma vez por semana, sem deixar a rodada lenta.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 
 const POR_RODADA = 90;
 const SEMANA = 7 * 86400 * 1000;
 const UA = { 'user-agent': 'Mozilla/5.0 (InfoBolsa dados)' };
 const espera = (ms) => new Promise((ok) => setTimeout(ok, ms));
+const maisDias = (iso, n) => new Date(Date.parse(iso + 'T12:00:00Z') + n * 864e5).toISOString().slice(0, 10);
 const dia = (s, off = 0) => new Date(s * 1000 + off + 12 * 3600 * 1000).toISOString().slice(0, 10);
 
 mkdirSync('site/semanal', { recursive: true });
@@ -21,7 +22,8 @@ const indice = existsSync(arqIndice) ? JSON.parse(readFileSync(arqIndice, 'utf8'
 const catalogo = Object.keys(JSON.parse(readFileSync('site/catalogo.json', 'utf8')).a || {});
 const todos = ['IBOV', ...catalogo];
 const agora = Date.now();
-const fila = todos
+// SO=AZUL3,BBAS3 busca só esses (teste)
+const fila = process.env.SO ? process.env.SO.split(',') : todos
   .filter((tk) => !indice.em[tk] || agora - Date.parse(indice.em[tk]) > SEMANA)
   .sort((a, b) => (indice.em[a] || '').localeCompare(indice.em[b] || ''))
   .slice(0, process.env.SEMANAL === '1' ? 400 : POR_RODADA);
@@ -55,7 +57,21 @@ for (const tk of fila) {
     if (!a || !b || Math.abs(b[1] / a[1] - 1) > 0.2) return true;
     return Math.abs(v[1] / a[1] - 1) < 0.5;
   });
-  if (limpo.length < 4) { sem++; await espera(300); continue; }
+  const splits = Object.values(res?.events?.splits || {}).filter((x) => x.numerator > 0 && x.denominator > 0).map((x) => [dia(x.date, off), x.numerator / x.denominator]);
+  // série que o Yahoo não ajustou (a Azul teve dois grupamentos em 2026 e o preço pula de R$ 7 para R$ 249): uma
+  // semana que multiplica ou divide o preço por 4 ou mais, sem desdobramento do próprio Yahoo perto, não serve.
+  // Sem o arquivo, o app estima pelas notas e avisa.
+  const pulo = limpo.some((v, i) => {
+    if (!i) return false;
+    const r = v[1] / limpo[i - 1][1];
+    if (r < 4 && r > 0.25) return false;
+    return !splits.some(([d]) => d > limpo[i - 1][0] && d <= maisDias(v[0], 7));
+  });
+  if (limpo.length < 4 || pulo) {
+    if (pulo) console.log(`semanal: ${tk} com salto sem ajuste, fica de fora`);
+    if (existsSync(`site/semanal/${tk}.json`)) unlinkSync(`site/semanal/${tk}.json`);
+    sem++; await espera(300); continue;
+  }
   // mais de 5 anos atrás: só a última semana de cada mês
   const corte = new Date(agora - 5 * 365.25 * 86400 * 1000).toISOString().slice(0, 10);
   const p = limpo.filter((v, i) => v[0] >= corte || !limpo[i + 1] || limpo[i + 1][0].slice(0, 7) !== v[0].slice(0, 7));
