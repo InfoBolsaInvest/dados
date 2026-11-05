@@ -98,6 +98,22 @@ async function mandar(token, titulo, texto, dados) {
 const feriado = (() => { try { return ler('calendario.json').some((e) => e.d === hoje && /Sem pregão/.test(e.t)); } catch { return false; } })();
 const pregaoHoje = brt.getUTCDay() % 6 !== 0 && !feriado && !!mercado.atualizadoEm && new Date(new Date(mercado.atualizadoEm).getTime() - 3 * 3600 * 1000).toISOString().slice(0, 10) === hoje;
 
+// os dias que mais mexem com o mercado, de calendario.json (o resto da agenda fica só no app)
+const diaImportante = (() => { try { return ler('calendario.json').filter((e) => e.d === hoje && /^(Decisão do Copom|Decisão de juros nos EUA|IPCA de)/.test(e.t)); } catch { return []; } })();
+
+// variação do dia da parte da carteira que está na bolsa, com as cotações desta rodada
+function variacaoCarteira(watch, qtd) {
+  let agora = 0, antes = 0;
+  for (const tk of watch) {
+    const q = Number(qtd[tk]);
+    const c = cot[tk];
+    if (!(q > 0) || !c || !(c[0] > 0) || !Number.isFinite(c[1]) || c[1] <= -100) continue;
+    agora += q * c[0];
+    antes += (q * c[0]) / (1 + c[1] / 100);
+  }
+  return antes > 0 ? { pct: (agora / antes - 1) * 100, reais: agora - antes } : null;
+}
+
 // ---------- o que cada pessoa deve receber agora ----------
 function avisosDe(u, ja, primeira) {
   const n = comoMapa(u.notif);
@@ -198,10 +214,24 @@ function avisosDe(u, ja, primeira) {
   }
   // fechamento: rodada das 18h30, só em dia de pregão (a B3 fecha às 17h ou às 18h, conforme o horário de verão
   // dos EUA, e a cotação pode ter até 30 min de atraso)
+  // Quem tem quantidade lançada recebe a carteira dele contra o Ibovespa (só a parte da bolsa; a renda fixa quase não
+  // muda num dia). Nada disso vai para o log: é dado pessoal.
   if (n.fechamento !== false && minutos >= 18 * 60 + 30 && pregaoHoje && mercado.ibov) {
     const [pts, v] = mercado.ibov;
     const dol = mercado.mundo?.USD || mercado.dolar;
-    add(`fech:${hoje}`, `Fechamento: Ibovespa ${v >= 0 ? 'sobe' : 'cai'} ${pct(Math.abs(v)).replace('+', '')}`, `Aos ${Math.round(pts).toLocaleString('pt-BR')} pontos.` + (dol ? ` Dólar a ${reais(dol[0])}.` : '') + (temResumo ? ' Toque pra ver o porquê.' : ''), { tela: 'hoje', ...(temResumo ? { resumo: '1' } : {}) });
+    const porque = temResumo ? ' Toque pra ver o porquê.' : '';
+    const dados = { tela: 'hoje', ...(temResumo ? { resumo: '1' } : {}) };
+    const cart = variacaoCarteira(watch, qtd);
+    if (cart) {
+      const r = `${cart.reais >= 0 ? '+' : '-'}${reais(Math.abs(cart.reais))}`;
+      add(`fech:${hoje}`, `Fechamento: sua carteira ${cart.pct >= 0 ? 'sobe' : 'cai'} ${pct(Math.abs(cart.pct)).replace('+', '')}`, `${r} no dia. O Ibovespa ${v >= 0 ? 'subiu' : 'caiu'} ${pct(Math.abs(v)).replace('+', '')}, aos ${Math.round(pts).toLocaleString('pt-BR')} pontos.${porque}`, dados);
+    } else {
+      add(`fech:${hoje}`, `Fechamento: Ibovespa ${v >= 0 ? 'sobe' : 'cai'} ${pct(Math.abs(v)).replace('+', '')}`, `Aos ${Math.round(pts).toLocaleString('pt-BR')} pontos.` + (dol ? ` Dólar a ${reais(dol[0])}.` : '') + porque, dados);
+    }
+  }
+  // dia importante para o mercado (decisão do Copom ou do Fed, IPCA): um aviso de manhã, junto com o de fechamento
+  if (n.fechamento !== false && minutos >= 10 * 60 && minutos < 13 * 60) {
+    for (const e of diaImportante) add(`dia:${e.d}:${e.t}`, `Hoje: ${e.t}`, `${e.s}.`, { tela: 'agenda' });
   }
   // vencimento da renda fixa: na semana do vencimento e no dia (o robô não roda no fim de semana: o "no dia"
   // vale até 3 dias depois, pra quem vence num sábado ou domingo ser avisado na segunda)
