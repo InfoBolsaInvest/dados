@@ -327,10 +327,15 @@ for (const f of existsSync('antigos') ? readdirSync('antigos').filter((x) => /^[
   const tk = f.slice(0, -5);
   const arq = `site/proventos/${tk}.json`;
   const atual = existsSync(arq) ? JSON.parse(readFileSync(arq, 'utf8')) : [];
-  const igual = (p) => atual.some((a) => classe(a[3]) === classe(p[3]) && diasEntre(a[0], p[0]) <= 5 && Math.abs(a[2] / p[2] - 1) < 0.01);
-  const velhos = JSON.parse(readFileSync(`antigos/${f}`, 'utf8')).filter((p) => (p[0] < CORTE || !atual.length) && !igual(p));
-  if (!velhos.length) continue;
-  writeFileSync(arq, JSON.stringify([...atual, ...velhos].sort((x, y) => (x[0] < y[0] ? 1 : -1))));
+  const ant = JSON.parse(readFileSync(`antigos/${f}`, 'utf8'));
+  const par = (a, p) => classe(a[3]) === classe(p[3]) && diasEntre(a[0], p[0]) <= 5 && Math.abs(a[2] / p[2] - 1) < 0.01;
+  // o que já está fica; só ganha a data de pagamento que faltava (o Fundamentus deixa em branco e o
+  // proventos-antigos.mjs completa depois pelo Investidor10)
+  const datados = atual.map((a) => { const p = a[0] < CORTE && !a[1] ? ant.find((x) => x[1] && par(a, x)) : null; return p ? [a[0], p[1], a[2], a[3]] : a; });
+  const velhos = ant.filter((p) => (p[0] < CORTE || !atual.length) && !atual.some((a) => par(a, p)));
+  const novo = [...datados, ...velhos].sort((x, y) => (x[0] < y[0] ? 1 : -1));
+  if (!velhos.length && JSON.stringify(datados) === JSON.stringify(atual)) continue;
+  writeFileSync(arq, JSON.stringify(novo));
   comAntigos++;
 }
 writeFileSync('.historico-novo', '1');

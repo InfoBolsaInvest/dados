@@ -6,7 +6,7 @@
 // histórico longo de cada ativo o que for mais antigo que ele.
 // Uso (no computador, uma vez; continua de onde parou): node proventos-antigos.mjs [acoes|fiis] [TK...]
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const SITE = 'https://infobolsainvest.github.io/dados';
 const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' };
@@ -176,5 +176,33 @@ if (qual === 'todos' || qual === 'fiis') {
   const sem = tks.filter((tk) => !cnpj[tk]);
   if (sem.length) console.log(`sem CNPJ (${sem.length}): ${sem.join(', ')}`);
   await rodar(tks.filter((tk) => cnpj[tk]), (tk) => fii(tk, cnpj[tk]), 3);
+}
+// pagamento que o Fundamentus deixa sem data ("-": o JCP da Copel aprovado em 2023 só foi pago em jun/2024): a data
+// vem do Investidor10, pelo mesmo provento (data com, JCP ou não, e valor). Lá o valor vem dividido pelos desdobramentos
+// que vieram depois, por isso vale também o valor vezes a proporção. Só desde 2010. Uso: node proventos-antigos.mjs pagamentos
+if (qual === 'pagamentos') {
+  const PROP = [1, 2, 3, 4, 5, 8, 10, 20, 100, 0.5, 0.25, 0.2, 0.1, 0.01];
+  const ler = (tk) => JSON.parse(readFileSync(`antigos/${tk}.json`, 'utf8'));
+  const todos = so.length ? so : readdirSync('antigos').filter((f) => /^[A-Z0-9]+\.json$/.test(f)).map((f) => f.slice(0, -5));
+  const tks = todos.filter((tk) => tipoAtivo(tk) === 'acao' && ler(tk).some((p) => !p[1] && p[0] >= '2010-01-01'));
+  let datas = 0;
+  await rodar(tks, async (tk) => {
+    const html = await (await pegar(`https://investidor10.com.br/acoes/${tk.toLowerCase()}/`))?.text();
+    const i = html ? html.indexOf('table-dividends-history') : -1;
+    if (i < 0) return 0;
+    const i10 = celulas(html.slice(i, html.indexOf('</table>', i))).filter((c) => c.length >= 4)
+      .map((c) => ({ com: iso(c[1]), pag: iso(c[2]), v: num(c[3]), jcp: /JSCP|JCP|juros/i.test(c[0]) })).filter((x) => x.com && x.pag && x.v > 0);
+    const l = ler(tk);
+    let k = 0;
+    for (const p of l) {
+      if (p[1] || p[0] < '2010-01-01') continue;
+      const achou = i10.filter((x) => x.com === p[0] && x.jcp === (p[3] === 'JCP') && PROP.some((f) => Math.abs((x.v * f) / p[2] - 1) < 0.01));
+      if (achou.length && new Set(achou.map((x) => x.pag)).size === 1) { p[1] = achou[0].pag; k++; }
+    }
+    if (k) writeFileSync(`antigos/${tk}.json`, JSON.stringify(l));
+    datas += k;
+    return k;
+  }, 2);
+  console.log(`pagamentos: ${datas} datas preenchidas em ${tks.length} ativos`);
 }
 console.log(`ok: ${n} ativos, ${vazios} sem provento, ${falhas.length} falharam${falhas.length ? ': ' + falhas.join(', ') : ''}`);
