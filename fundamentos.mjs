@@ -271,7 +271,23 @@ for (const [tk, x] of Object.entries(anterior.a || {})) {
   if (!a[tk].e && x.e && falhouB3.has(tk.slice(0, 4))) a[tk].e = x.e;
   if (!a[tk].vp && x.vp) a[tk].vp = x.vp;
 }
-writeFileSync('site/fundamentos.json', JSON.stringify({ atualizadoEm: agora.toISOString(), a }));
+// quedas do rendimento dos fundos que saíram da bolsa (sem evento na B3): o valor por cota cai para 1/k e fica nesse
+// patamar, como no desdobramento de 1 para 8 do BCFF11 em 2023. Sozinha a queda não prova nada (fundo também corta
+// o rendimento); o app só usa quando as notas mostram um desdobramento com a mesma proporção, para achar a data.
+// quedas: { TICKER: [[data com do último rendimento antes da queda, proporção], ...] }
+const quedas = {};
+for (const f of existsSync('antigos') ? readdirSync('antigos').filter((x) => /^[A-Z0-9]+\.json$/.test(x)) : []) {
+  const tk = f.slice(0, -5);
+  if (cat[tk]) continue;
+  const r = JSON.parse(readFileSync(`antigos/${f}`, 'utf8')).filter((p) => p[3] === 'Rendimento' && p[2] > 0).sort((x, y) => (x[0] < y[0] ? -1 : 1));
+  const parecido = (x, y) => x && y && x[2] / y[2] <= 1.5 && x[2] / y[2] >= 0.67;
+  for (let i = 1; i < r.length; i++) {
+    const k = r[i - 1][2] / r[i][2];
+    if (k < 1.8 || (r[i + 1] && !parecido(r[i + 1], r[i])) || (r[i - 2] && !parecido(r[i - 2], r[i - 1]))) continue;
+    (quedas[tk] ||= []).push([r[i - 1][0], Math.round(k * 100) / 100]);
+  }
+}
+writeFileSync('site/fundamentos.json', JSON.stringify({ atualizadoEm: agora.toISOString(), a, quedas }));
 writeFileSync('.cvm-codigos.json', JSON.stringify(codigoCvm));
 // histórico longo de proventos, um arquivo por ativo. A B3 só mostra uns 12 meses: o robô junta com o que já
 // tinha guardado (cache do Actions, junto com o histórico de preços) e o histórico cresce com o tempo. Quem falhou
@@ -297,19 +313,22 @@ for (const [tk, lista] of Object.entries(todos)) {
   writeFileSync(arq, JSON.stringify(l));
   longos++;
 }
-// proventos antigos (antigos/{TK}.json, do proventos-antigos.mjs, guardados no git): entra o que for mais antigo que
-// o histórico longo do ativo. O mesmo provento com 1 ou 2 dias de diferença entre as fontes (ou o valor arredondado
-// do Fundamentus) não entra duas vezes. Ativo sem provento nos últimos 12 meses (não está na lista da B3) fica só
-// com os antigos, e o que saiu da bolsa também (MALL11): quem teve recebeu enquanto era negociado.
+// proventos antigos (antigos/{TK}.json, do proventos-antigos.mjs, guardados no git): de antes de CORTE vale o que
+// faltar no histórico longo, inclusive buraco no meio (o Fiagro que passou a publicar com outro tipo de fundo ficou
+// sem jul a out/2025); de CORTE em diante, só a B3 (o robô guarda a lista dela desde então). O mesmo provento com
+// alguns dias de diferença entre as fontes, o valor arredondado do Fundamentus ou outro nome (a B3 chama de
+// "Rendimento" alguns dividendos) não entra duas vezes. Ativo sem provento nos últimos 12 meses (não está na lista
+// da B3) fica só com os antigos, e o que saiu da bolsa também (MALL11): quem teve recebeu enquanto era negociado.
+const CORTE = '2025-11-15';
 const diasEntre = (a, b) => Math.abs(Date.parse(a) - Date.parse(b)) / 86400000;
+const classe = (t) => (/JCP|juros/i.test(t) ? 'jcp' : /Amortiza|Restitui/i.test(t) ? 'capital' : 'renda');
 let comAntigos = 0;
 for (const f of existsSync('antigos') ? readdirSync('antigos').filter((x) => /^[A-Z0-9]+\.json$/.test(x)) : []) {
   const tk = f.slice(0, -5);
   const arq = `site/proventos/${tk}.json`;
   const atual = existsSync(arq) ? JSON.parse(readFileSync(arq, 'utf8')) : [];
-  const desde = atual.map((p) => p[0]).sort()[0];
-  const igual = (p) => atual.some((a) => a[3] === p[3] && diasEntre(a[0], p[0]) <= 5 && Math.abs(a[2] / p[2] - 1) < 0.01);
-  const velhos = JSON.parse(readFileSync(`antigos/${f}`, 'utf8')).filter((p) => (!desde || p[0] < desde) && !igual(p));
+  const igual = (p) => atual.some((a) => classe(a[3]) === classe(p[3]) && diasEntre(a[0], p[0]) <= 5 && Math.abs(a[2] / p[2] - 1) < 0.01);
+  const velhos = JSON.parse(readFileSync(`antigos/${f}`, 'utf8')).filter((p) => (p[0] < CORTE || !atual.length) && !igual(p));
   if (!velhos.length) continue;
   writeFileSync(arq, JSON.stringify([...atual, ...velhos].sort((x, y) => (x[0] < y[0] ? 1 : -1))));
   comAntigos++;

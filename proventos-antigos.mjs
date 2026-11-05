@@ -97,10 +97,11 @@ async function cnpjs() {
 const FNET = 'https://fnet.bmfbovespa.com.br/fnet/publico';
 const tag = (s, t) => s.match(new RegExp(`<${t}>([^<]*)</${t}>`))?.[1]?.trim() || '';
 async function fii(tk, cnpj) {
-  // avisos de "Rendimentos e Amortizações" ativos (o retificado fica inativo; o cancelado sai)
+  // avisos de "Rendimentos e Amortizações" ativos (o retificado fica inativo; o cancelado sai), de qualquer tipo de
+  // fundo: desde a regra nova da CVM, o Fiagro publica em outro tipo (11) e os avisos de antes ficam no tipo 1
   const docs = [];
   for (let s = 0; ; s += 200) {
-    const r = await pegar(`${FNET}/pesquisarGerenciadorDocumentosDados?d=1&s=${s}&l=200&o[0][dataEntrega]=desc&tipoFundo=1&idCategoriaDocumento=14&idTipoDocumento=41&cnpjFundo=${cnpj}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    const r = await pegar(`${FNET}/pesquisarGerenciadorDocumentosDados?d=1&s=${s}&l=200&o[0][dataEntrega]=desc&idCategoriaDocumento=14&idTipoDocumento=41&cnpjFundo=${cnpj}`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
     const j = await r.json();
     docs.push(...(j.data || []).filter((d) => d.status === 'AC'));
     if (!j.data?.length || s + 200 >= j.recordsTotal) break;
