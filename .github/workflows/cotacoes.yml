@@ -55,10 +55,8 @@ on:
         required: false
         default: ''
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+# nada por padrão: cada job pede só o que usa
+permissions: {}
 
 concurrency:
   group: cotacoes
@@ -67,6 +65,11 @@ concurrency:
 jobs:
   atualizar:
     runs-on: ubuntu-latest
+    # ler o código, publicar o site e pegar os acessos temporários (Pages e Google); não grava no repositório
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
     steps:
@@ -263,13 +266,6 @@ jobs:
         id: publicar
         if: steps.publicar1.outcome == 'failure'
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4
-      - name: Manter o agendamento ativo
-        if: github.event.schedule == '0 12 1 * *'
-        run: |
-          git config user.name "InfoBolsa"
-          git config user.email "contato@infobolsainvestimentos.com"
-          git commit --allow-empty -m "Mantém o agendamento ativo"
-          git push
       - name: Avisar no Telegram o que falhou
         if: always()
         env:
@@ -289,3 +285,19 @@ jobs:
         with:
           path: .alerta
           key: alerta-${{ github.run_id }}
+
+  # todo dia 1: um commit vazio mantém o agendamento ativo (o GitHub pausa repositórios parados há 60 dias).
+  # Fica separado porque é o único passo que grava no repositório.
+  manter-agendamento:
+    if: github.event.schedule == '0 12 1 * *'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Manter o agendamento ativo
+        run: |
+          git config user.name "InfoBolsa"
+          git config user.email "contato@infobolsainvestimentos.com"
+          git commit --allow-empty -m "Mantém o agendamento ativo"
+          git push
