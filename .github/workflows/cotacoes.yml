@@ -244,8 +244,8 @@ jobs:
         with:
           path: cache-b3
           key: b3anos-${{ github.run_id }}
-      - name: Páginas fixas (política de privacidade e exclusão de conta)
-        run: cp paginas/*.html site/
+      - name: Páginas fixas (política de privacidade e exclusão de conta) e os prints do programa do IR (relatório em PDF do app)
+        run: cp paginas/*.html site/ && cp -r paginas/ir site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
