@@ -10,7 +10,7 @@
 // com uma checagem rápida de que é base64 puro (sem aspas nem barra, que poderiam mexer no resto do pedido).
 
 const PROJETO = 'infobolsa-investimentos';
-const POR_DIA = 200; // leituras por dia (o app manda o PDF grande em partes de 15 páginas)
+const POR_DIA = 300; // leituras por dia (o app manda o PDF grande em partes de 10 páginas)
 const MAX_BYTES = 8 * 1024 * 1024;
 const JWKS = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 
