@@ -250,8 +250,18 @@ jobs:
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site
+      # às vezes o GitHub ainda não acha o pacote que acabou de subir ("No artifacts named github-pages"): espera um
+      # pouco e tenta de novo antes de avisar que falhou
       - name: Publicar
+        id: publicar1
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+      - name: Esperar para publicar de novo
+        if: steps.publicar1.outcome == 'failure'
+        run: sleep 30
+      - name: Publicar (segunda tentativa)
         id: publicar
+        if: steps.publicar1.outcome == 'failure'
         uses: actions/deploy-pages@v4
       - name: Manter o agendamento ativo
         if: github.event.schedule == '0 12 1 * *'
@@ -267,7 +277,7 @@ jobs:
           TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
           # só o resultado de cada passo (as saídas, como a chave do Google, ficam de fora)
           PASSOS: >-
-            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","ifix":"${{ steps.ifix.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","cnpj":"${{ steps.cnpj.outcome }}","eventos":"${{ steps.eventos.outcome }}","b3hist":"${{ steps.b3hist.outcome }}","faltam":"${{ steps.faltam.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","resumo":"${{ steps.resumo.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar.outcome }}"}
+            {"cot":"${{ steps.cot.outcome }}","b3":"${{ steps.b3.outcome }}","hist":"${{ steps.hist.outcome }}","yahoo":"${{ steps.yahoo.outcome }}","ifix":"${{ steps.ifix.outcome }}","nomes":"${{ steps.nomes.outcome }}","fund":"${{ steps.fund.outcome }}","cnpj":"${{ steps.cnpj.outcome }}","eventos":"${{ steps.eventos.outcome }}","b3hist":"${{ steps.b3hist.outcome }}","faltam":"${{ steps.faltam.outcome }}","agenda":"${{ steps.agenda.outcome }}","rf":"${{ steps.rf.outcome }}","videos":"${{ steps.videos.outcome }}","noticias":"${{ steps.noticias.outcome }}","resumo":"${{ steps.resumo.outcome }}","google":"${{ steps.google.outcome }}","repor":"${{ steps.repor.outcome }}","avisos":"${{ steps.avisos.outcome }}","i10":"${{ steps.i10.outcome }}","publicar":"${{ steps.publicar1.outcome == 'success' && 'success' || steps.publicar.outcome }}"}
           JOB_STATUS: ${{ job.status }}
           EVENTO: ${{ github.event.inputs.relogio == '1' && 'relogio' || github.event_name }}
           MODO: ${{ github.event.inputs.telegram }}
