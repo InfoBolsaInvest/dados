@@ -298,7 +298,8 @@ for (const c of carteiras) {
     }
     // conferência pela IA (só quando mudou algo): avisa se algum item parece mal entendido; não muda nada
     const duvidas = mud.length || process.env.I10 === '2' ? await conferir(entendido, fora, rfFora) : [];
-    console.log(`conferência: ${duvidas.length ? duvidas.join(' | ') : 'nada a apontar'}`);
+    // o log das Actions é público (repositório aberto): só a contagem, nunca o que a carteira do cliente tem
+    console.log(`conferência: ${duvidas.length ? `${duvidas.length} ponto(s) para olhar (detalhes no Telegram)` : 'nada a apontar'}`);
     if (duvidas.length) {
       campos.i10Msg.stringValue += ` Conferir: ${duvidas.join('; ')}`;
       await telegram(`Carteira de ${nome}: a conferência achou ${duvidas.length === 1 ? 'um item' : 'itens'} pra olhar no painel:\n${duvidas.map((d) => `• ${d}`).join('\n')}`);
@@ -312,7 +313,7 @@ for (const c of carteiras) {
     console.log(`carteira ${c.uid.slice(0, 6)}…: ${mud.length ? `${mud.length} mudança(s)` : 'sem mudança'}${fora.length ? `, ${fora.length} fora do catálogo` : ''}`);
   } catch (e) {
     falhas++;
-    console.log(`carteira ${c.uid.slice(0, 6)}…: não li o Investidor10 (${e.message})`);
+    console.log(`carteira ${c.uid.slice(0, 6)}…: não li o Investidor10 (${String(e.message).slice(0, 40).replace(/[0-9]{3,}/g, '…')})`);
     await salvar({ i10Msg: { stringValue: `Não consegui ler o Investidor10 hoje (${e.message}). Tento de novo na próxima rodada.` } }).catch(() => {});
   }
 }

@@ -114,8 +114,12 @@ async function usuario(token) {
   if (!k || !(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', k, b64url(s), new TextEncoder().encode(`${h}.${p}`)))) return null;
   const agora = Date.now() / 1000;
   if (dados.aud !== PROJETO || dados.iss !== `https://securetoken.google.com/${PROJETO}` || !(dados.exp > agora) || !dados.sub) return null;
+  // conta de e-mail e senha só depois de confirmar o e-mail: senão um script cria contas sem fim (com a chave pública do
+  // app) e gasta o crédito da IA. Conta do Google já vem confirmada.
+  if (dados.firebase?.sign_in_provider !== 'google.com' && dados.email_verified !== true) return VERIFICAR;
   return dados.sub;
 }
+const VERIFICAR = Symbol('verificar');
 
 const cent = (v) => Math.round((Number(v) || 0) * 100) / 100;
 // código da opção: as 4 do ativo (B3SA, PETR), a letra do mês (A a L call, M a X put), o número (2 a 4 algarismos: COSAN3 é a ação lida com o nome) e, na semanal, W e a
@@ -155,6 +159,7 @@ export default {
     if (req.method !== 'POST' || new URL(req.url).pathname !== '/nota') return resposta(404, { erro: 'nao-encontrado' });
     const uid = await usuario((req.headers.get('Authorization') || '').replace(/^Bearer /, '')).catch(() => null);
     if (!uid) return resposta(401, { erro: 'login' });
+    if (uid === VERIFICAR) return resposta(403, { erro: 'verificar' });
     return lerNota(req, env, uid);
   },
 };

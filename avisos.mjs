@@ -74,7 +74,10 @@ async function guardar(uid, e, alertasAtivos) {
   await fetch(`${FS}/avisos/${uid}?updateMask.fieldPaths=e`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { e: paraFs(limpo) } }) });
 }
 // chaves dos alertas de preço que ainda existem na conta (ficam guardadas mesmo depois de 15 dias)
-const alertasDe = (u) => new Set(Object.entries(u.alertas || {}).flatMap(([tk, als]) => (als || []).filter((a) => a.tipo === 'preco').map((a) => `alerta:${tk}:${a.dir}:${a.valor}`)));
+// lista e mapa só se forem mesmo (a conta é gravada pelo app: um tipo errado parava a rodada de todo mundo)
+const comoLista = (x) => (Array.isArray(x) ? x : []);
+const comoMapa = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? x : {});
+const alertasDe = (u) => new Set(Object.entries(comoMapa(u.alertas)).flatMap(([tk, als]) => comoLista(als).filter((a) => a.tipo === 'preco').map((a) => `alerta:${tk}:${a.dir}:${a.valor}`)));
 
 async function tirarEndereco(uid) {
   await fetch(`${FS}/usuarios/${uid}?updateMask.fieldPaths=push`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: {} }) });
@@ -97,19 +100,19 @@ const pregaoHoje = brt.getUTCDay() % 6 !== 0 && !feriado && !!mercado.atualizado
 
 // ---------- o que cada pessoa deve receber agora ----------
 function avisosDe(u, ja, primeira) {
-  const n = u.notif || {};
-  const watch = u.watch || [];
-  const qtd = u.qtd || {};
+  const n = comoMapa(u.notif);
+  const watch = comoLista(u.watch);
+  const qtd = comoMapa(u.qtd);
   const lista = [];
   const add = (chave, titulo, texto, dados = {}) => { if (!ja[chave] && !lista.some((x) => x.chave === chave)) lista.push({ chave, titulo, texto, dados }); };
 
   // alertas de preço: preço alvo vai uma vez; variação vai no máximo uma vez por dia
   if (n.alertas !== false) {
-    for (const [tk, als] of Object.entries(u.alertas || {})) {
+    for (const [tk, als] of Object.entries(comoMapa(u.alertas))) {
       const q = cot[tk];
       if (!q) continue;
       const [preco, v] = q;
-      for (const al of als || []) {
+      for (const al of comoLista(als)) {
         if (al.tipo === 'preco' && ((al.dir === 'acima' && preco >= al.valor) || (al.dir === 'abaixo' && preco <= al.valor)))
           add(`alerta:${tk}:${al.dir}:${al.valor}`, `${tk} chegou a ${reais(preco)}`, `Seu alerta era ${al.dir === 'acima' ? 'subir até' : 'cair até'} ${reais(al.valor)}.`, { tk });
         // variação só em dia de pregão e depois das 10h15 (antes disso a cotação ainda é a do pregão anterior)
@@ -203,7 +206,7 @@ function avisosDe(u, ja, primeira) {
   // vencimento da renda fixa: na semana do vencimento e no dia (o robô não roda no fim de semana: o "no dia"
   // vale até 3 dias depois, pra quem vence num sábado ou domingo ser avisado na segunda)
   if (n.rendafixa !== false && minutos >= 10 * 60) {
-    for (const x of u.rf || []) {
+    for (const x of comoLista(u.rf)) {
       if (!x?.venc || !x.id) continue;
       const d = Math.round((new Date(x.venc + 'T12:00:00Z') - new Date(hoje + 'T12:00:00Z')) / 86400000);
       const nome = x.produto === 'Tesouro' ? x.nome : `${x.produto} ${x.nome || ''}`.trim();
@@ -297,6 +300,8 @@ let mandados = 0, pessoas = 0;
 for (const u of todas) {
   if (donoDoToken.get(u.push.token) !== u) continue;
   pessoas++;
+  // uma conta com dado estranho não pode parar os avisos dos outros nem a limpeza do fim
+  try {
   const antes = await enviados(u.uid);
   const ja = { ...(antes || {}) };
   const lista = avisosDe(u, ja, antes === null);
@@ -310,6 +315,7 @@ for (const u of todas) {
     mudou = true;
   }
   if (mudou) await guardar(u.uid, ja, alertasDe(u));
+  } catch (e) { console.log(`conta ${u.uid.slice(0, 6)}…: pulei (${e.message})`); }
 }
 console.log(`ok: ${mandados} aviso(s) para ${pessoas} pessoa(s) com notificação ligada`);
 
