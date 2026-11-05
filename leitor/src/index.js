@@ -11,6 +11,9 @@
 
 const PROJETO = 'infobolsa-investimentos';
 const POR_DIA = 300; // leituras por dia (o app manda o PDF grande em partes de 10 páginas)
+// teto do dia somando todo mundo: protege o crédito da IA de quem criar muitas contas do Google para gastar
+// (cada parte custa uns US$ 0,03: 1.500 partes são uns US$ 45 no dia, umas 60 importações grandes)
+const GERAL_POR_DIA = 1500;
 const MAX_BYTES = 8 * 1024 * 1024;
 const JWKS = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
 
@@ -167,7 +170,11 @@ export async function lerNota(req, env, uid) {
   const chaveDia = `nota:${uid}:${dia}`;
   const usados = Number(await env.LIMITE.get(chaveDia)) || 0;
   if (usados >= POR_DIA) return resposta(429, { erro: 'limite' });
+  const chaveGeral = `nota:geral:${dia}`;
+  const geral = Number(await env.LIMITE.get(chaveGeral)) || 0;
+  if (geral >= GERAL_POR_DIA) return resposta(429, { erro: 'limite' });
   await env.LIMITE.put(chaveDia, String(usados + 1), { expirationTtl: 2 * 86400 });
+  await env.LIMITE.put(chaveGeral, String(geral + 1), { expirationTtl: 2 * 86400 });
 
   // o pedido para a API: o PDF entra no meio, em fluxo
   const MARCA = '@@PDF@@';
