@@ -4,7 +4,8 @@
 //     também de quem já saiu da bolsa; o que faltar, pela lista de empresas da B3 (pelas 4 letras do código)
 //   FII: informe mensal da CVM (ISIN e CNPJ do fundo, desde 2016); Fiagro: informe mensal do Fiagro
 //   ETF e o que sobrar dos fundos: lista de fundos da B3 (sigla e nome) com o cadastro de fundos da CVM (nome e CNPJ)
-// Gera site/cnpj.json { atualizadoEm, a: { TICKER: [CNPJ só com números, nome] } }. Quem já estava publicado não sai.
+// Gera site/cnpj.json { atualizadoEm, a: { TICKER: [CNPJ só com números, nome, (fundo) CNPJ do administrador, nome
+// dele] }, cor: { CNPJ: nome da corretora } }. Quem já estava publicado não sai.
 // Precisa do site/catalogo.json do atualizar.mjs.
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -18,7 +19,7 @@ try {
   const r = await fetch(`${SITE}/cnpj.json?x=${Date.now()}`);
   if (r.ok) anterior = await r.json();
 } catch {}
-if (anterior.atualizadoEm && agora - new Date(anterior.atualizadoEm) < 7 * 86400000 && process.env.CNPJ !== '1') {
+if (anterior.atualizadoEm && anterior.cor && agora - new Date(anterior.atualizadoEm) < 7 * 86400000 && process.env.CNPJ !== '1') {
   writeFileSync('site/cnpj.json', JSON.stringify(anterior));
   console.log('ok: CNPJs da semana já feitos');
   process.exit(0);
@@ -42,8 +43,8 @@ const pôr = (tk, cnpj, nome, fonte) => {
   a[tk] = [so(cnpj), limpo(nome)];
   por[fonte] = (por[fonte] || 0) + 1;
 };
-function csv(url, arq) {
-  execSync(`curl -sf -o .cnpj.zip "${url}"`);
+function csv(url, arq) { // url vazia: outro arquivo do zip já baixado
+  if (url) execSync(`curl -sf -o .cnpj.zip "${url}"`);
   const l = execSync(`unzip -p .cnpj.zip ${arq}`, { maxBuffer: 512 * 1024 * 1024 }).toString('latin1').split(/\r?\n/).map((x) => x.split(';'));
   const col = (...n) => n.map((c) => l[0].indexOf(c)).find((i) => i >= 0);
   return { linhas: l.slice(1).filter((x) => x.length > 1), col };
@@ -110,9 +111,22 @@ for (let k = 1, achou = 0; k <= 4 && !achou; k++) {
 }
 
 // ---------- ETF e os fundos que faltaram (lista da B3 pelo nome, no cadastro de fundos da CVM) ----------
+const adm = {}; // CNPJ do fundo -> [CNPJ do administrador, nome]
 try {
   const { linhas, col } = csv('https://dados.cvm.gov.br/dados/FI/CAD/DADOS/registro_fundo_classe.zip', 'registro_classe.csv');
   const iC = col('CNPJ_Classe'), iN = col('Denominacao_Social'), iS = col('Situacao');
+  // administrador de cada fundo (o cadastro da classe aponta o fundo pelo ID; o do fundo traz o administrador)
+  const fundos = csv('', 'registro_fundo.csv');
+  const fId = fundos.col('ID_Registro_Fundo'), fC = fundos.col('CNPJ_Fundo'), fA = fundos.col('CNPJ_Administrador'), fN = fundos.col('Administrador'), fS = fundos.col('Situacao');
+  const doId = {};
+  for (const x of fundos.linhas) {
+    if (!/^\d{14}$/.test(so(x[fA])) || /^0+$/.test(so(x[fA]))) continue;
+    const v = [so(x[fA]), limpo(x[fN])];
+    doId[x[fId]] = v;
+    if (!adm[so(x[fC])] || !/Cancel/i.test(x[fS])) adm[so(x[fC])] = v;
+  }
+  const cId = col('ID_Registro_Fundo');
+  for (const x of linhas) if (doId[x[cId]] && (!adm[so(x[iC])] || !/Cancel/i.test(x[iS]))) adm[so(x[iC])] = doId[x[cId]];
   const doNome = new Map();
   for (const x of linhas) { const k = chave(x[iN]); if (k && (!doNome.has(k) || !/Cancel/i.test(x[iS]))) doNome.set(k, [x[iC], x[iN]]); }
   // a B3 abrevia muitos nomes ("FDO INV COTAS FDO INV INFRA RF CP"): sem o nome igual, pelas palavras que distinguem o
@@ -146,9 +160,29 @@ try {
   }
 } catch (e) { console.log(`ETF: ${e.message}`); }
 
+// o administrador vai junto do fundo: [CNPJ, nome, CNPJ do administrador, nome do administrador]
+let comAdm = 0;
+for (const v of Object.values(a)) if (adm[v[0]] && adm[v[0]][0] !== v[0]) { v.push(...adm[v[0]]); comAdm++; }
+
+// ---------- corretoras (cadastro de intermediários da CVM): o app guarda só o CNPJ lido na nota ----------
+const cor = { ...(anterior.cor || {}) };
+try {
+  const { linhas, col } = csv('https://dados.cvm.gov.br/dados/INTERMED/CAD/DADOS/cad_intermed.zip', 'cad_intermed.csv');
+  const iC = col('CNPJ'), iN = col('DENOM_SOCIAL'), iS = col('SIT'), iT = col('TP_PARTIC');
+  const ativa = {};
+  for (const x of linhas) {
+    if (!/CORRETORA|DISTRIBUIDORA|BANCO/i.test(x[iT] || '')) continue;
+    const c = so(x[iC]), ok = /NORMAL/i.test(x[iS] || '');
+    if (/^0+$/.test(c) || (ativa[c] && !ok)) continue;
+    cor[c] = limpo(x[iN]);
+    if (ok) ativa[c] = true;
+  }
+} catch (e) { console.log(`corretoras: ${e.message}`); }
+
 const novos = Object.keys(a).length;
 for (const [tk, v] of Object.entries(anterior.a || {})) if (!a[tk]) a[tk] = v;
-writeFileSync('site/cnpj.json', JSON.stringify({ atualizadoEm: agora.toISOString(), a }));
+writeFileSync('site/cnpj.json', JSON.stringify({ atualizadoEm: agora.toISOString(), a, cor }));
+console.log(`administrador de ${comAdm} fundos; ${Object.keys(cor).length} corretoras e distribuidoras`);
 const semNada = Object.keys(cat).filter((tk) => !a[tk]);
 console.log(`CNPJ: ${novos} ativos achados hoje (${Object.entries(por).map(([k, v]) => `${k} ${v}`).join(', ')}), ${Object.keys(a).length} publicados; do catálogo sem CNPJ: ${semNada.length}${semNada.length ? ` (${semNada.slice(0, 30).join(', ')}${semNada.length > 30 ? '...' : ''})` : ''}`);
 if (existsSync('.cnpj.zip')) execSync('rm -f .cnpj.zip');
