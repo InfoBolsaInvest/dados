@@ -60,11 +60,33 @@ async function contas() {
   } while (pagina);
   return out;
 }
+// os últimos avisos de cada pessoa (o sininho do app mostra): lidos junto com o "já mandado"
+const HIST = new Map();
+const HIST_MAX = 40;
 async function enviados(uid) {
   const r = await fetch(`${FS}/avisos/${uid}`, { headers: H });
-  if (r.status === 404) return null; // primeira vez: não manda o que é antigo
+  if (r.status === 404) { HIST.set(uid, []); return null; } // primeira vez: não manda o que é antigo
   if (!r.ok) throw new Error(`Firestore avisos: ${r.status}`);
-  return valor({ mapValue: { fields: (await r.json()).fields || {} } }).e || {};
+  const doc = valor({ mapValue: { fields: (await r.json()).fields || {} } });
+  HIST.set(uid, Array.isArray(doc.h) ? doc.h : []);
+  return doc.e || {};
+}
+// valor no formato do Firestore, com texto, número, lista e mapa
+function fs(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'string') return { stringValue: v };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(fs) } };
+  return { mapValue: { fields: Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fs(x)])) } };
+}
+// guarda no histórico o que acabou de chegar no celular (mais novo primeiro): t título, x texto, em quando, d para onde
+// o toque leva (tela, ativo, resumo)
+async function anotar(uid, itens) {
+  if (!itens.length) return;
+  const h = [...itens.map((a) => ({ t: a.titulo, x: a.texto, em: Date.now(), d: a.dados || {} })), ...(HIST.get(uid) || [])].slice(0, HIST_MAX);
+  HIST.set(uid, h);
+  await fetch(`${FS}/avisos/${uid}?updateMask.fieldPaths=h`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { h: fs(h) } }) });
 }
 async function guardar(uid, e, alertasAtivos) {
   // guarda só os últimos 15 dias; alerta de preço que já disparou fica guardado enquanto existir na conta
@@ -294,6 +316,7 @@ if (recado.titulo && recado.texto) {
     if (r !== 'ok') { console.log(`recado não foi: ${r}`); continue; }
     ok++;
     if (recado.para === 'todos') { e[chave] = Date.now(); await guardar(u.uid, e, alertasDe(u)); }
+    await anotar(u.uid, [{ titulo: recado.titulo, texto: recado.texto, dados }]);
   }
   console.log(`ok: recado (${recado.para}) mandado para ${ok} de ${alvo.length} celular(es)${ja ? `, ${ja} já tinham recebido` : ''}`);
   process.exit(0);
@@ -336,6 +359,7 @@ for (const u of todas) {
   const ja = { ...(antes || {}) };
   const lista = avisosDe(u, ja, antes === null);
   let mudou = antes === null;
+  const chegaram = [];
   for (const a of lista.slice(0, POR_RODADA)) {
     const r = await mandar(u.push.token, a.titulo, a.texto, Object.fromEntries(Object.entries(a.dados).map(([k, v]) => [k, String(v)])));
     if (r === 'sem-endereco') { await tirarEndereco(u.uid); break; }
@@ -343,8 +367,10 @@ for (const u of todas) {
     for (const k of [a.chave, ...(a.marcar || [])].filter(Boolean)) ja[k] = Date.now();
     mandados++;
     mudou = true;
+    chegaram.push({ titulo: a.titulo, texto: a.texto, dados: Object.fromEntries(Object.entries(a.dados).map(([k, v]) => [k, String(v)])) });
   }
   if (mudou) await guardar(u.uid, ja, alertasDe(u));
+  await anotar(u.uid, chegaram);
   } catch (e) { console.log(`conta ${u.uid.slice(0, 6)}…: pulei (${e.message})`); }
 }
 console.log(`ok: ${mandados} aviso(s) para ${pessoas} pessoa(s) com notificação ligada`);
