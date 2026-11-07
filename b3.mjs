@@ -9,8 +9,9 @@ import { readFileSync, writeFileSync } from 'node:fs';
 const FORA = new Set(['10', '22']);
 const TIPO = { '12': 'fii', '13': 'fii', '14': 'etf', '34': 'bdr', '35': 'bdr', '36': 'bdr' };
 
-async function ultimoPregao() {
-  for (let d = 0; d < 7; d++) {
+// o arquivo do último pregão (antes = 0) ou o do pregão anterior a uma data (antes = dias a pular a partir de hoje)
+async function ultimoPregao(antes = 0) {
+  for (let d = antes; d < antes + 7; d++) {
     const dia = new Date(Date.now() - 3 * 3600 * 1000 - d * 86400 * 1000);
     const nome = `COTAHIST_D${String(dia.getUTCDate()).padStart(2, '0')}${String(dia.getUTCMonth() + 1).padStart(2, '0')}${dia.getUTCFullYear()}`;
     const r = await fetch(`https://bvmf.bmfbovespa.com.br/InstDados/SerHist/${nome}.ZIP`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
@@ -68,18 +69,36 @@ for (const tk of novos.slice(0, 30)) {
 // A variação do dia é refeita contra o fechamento anterior que a própria brapi usou.
 const agoraBR = new Date(Date.now() - 3 * 3600 * 1000);
 const minutosBR = agoraBR.getUTCHours() * 60 + agoraBR.getUTCMinutes();
-const usarOficial = process.env.FECHAMENTO === '1' || dia === agoraBR.toISOString().slice(0, 10) || minutosBR < 10 * 60 + 5;
+// sábado e domingo também: não tem pregão, vale o último fechamento oficial
+const usarOficial = process.env.FECHAMENTO === '1' || dia === agoraBR.toISOString().slice(0, 10) || minutosBR < 10 * 60 + 5 || agoraBR.getUTCDay() % 6 === 0;
 let trocados = 0;
 const grandes = [];
 if (usarOficial) {
+  // a variação do dia contra o fechamento oficial do pregão anterior (o arquivo de antes): é a conta das corretoras.
+  // Sem ele, contra o fechamento anterior que a brapi usou
+  const pulo = Math.round((Date.now() - 3 * 3600 * 1000 - Date.parse(`${dia}T00:00:00Z`)) / 86400000) + 1;
+  const antes = {};
+  try {
+    const ant = await ultimoPregao(pulo);
+    for (const l of ant.txt.split(/\r?\n/)) if (l.startsWith('01') && l.slice(24, 27) === '010') antes[l.slice(12, 24).trim()] = Number(l.slice(108, 121)) / 100;
+    console.log(`B3: fechamento anterior de ${ant.dia}`);
+  } catch (e) { console.log(`B3: sem o arquivo do pregão anterior (${e.message})`); }
+  let viradas = 0;
   for (const [tk, fech] of Object.entries(oficial)) {
     const q = cotacoes.q[tk];
-    if (!q || novos.includes(tk) || Math.abs(q[0] - fech) < 0.005) continue;
-    const anterior = q[1] > -100 ? q[0] / (1 + q[1] / 100) : 0;
+    if (!q || novos.includes(tk)) continue;
+    const daBrapi = q[1] > -100 ? q[0] / (1 + q[1] / 100) : 0;
+    // desdobramento ou grupamento no dia: o fechamento anterior da B3 não está ajustado, fica a variação da brapi
+    const ofAnt = antes[tk] > 0 && Math.abs(fech / antes[tk] - 1) < 0.4 ? antes[tk] : 0;
+    const anterior = ofAnt || daBrapi;
+    const v = anterior > 0 ? Math.round((fech / anterior - 1) * 10000) / 100 : q[1];
+    if (Math.abs(q[0] - fech) < 0.005 && Math.abs(q[1] - v) < 0.005) continue;
     if (Math.abs(q[0] / fech - 1) > 0.003) grandes.push(`${tk} ${q[0]}→${fech}`);
-    cotacoes.q[tk] = [fech, anterior > 0 ? Math.round((fech / anterior - 1) * 10000) / 100 : q[1]];
+    if (Math.sign(q[1]) !== Math.sign(v) && v) viradas++;
+    cotacoes.q[tk] = [fech, v];
     trocados++;
   }
+  if (viradas) console.log(`B3: ${viradas} ativo(s) com a variação do dia trocando de sinal`);
   cotacoes.fechamentoOficial = dia;
   console.log(`B3: fechamento oficial de ${dia} em ${trocados} ativo(s)${grandes.length ? `; diferença acima de 0,3%: ${grandes.slice(0, 15).join(', ')}` : ''}`);
 }
