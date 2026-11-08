@@ -76,7 +76,9 @@ const grandes = [];
 if (usarOficial) {
   // a variação do dia contra o fechamento oficial do pregão anterior (o arquivo de antes): é a conta das corretoras.
   // Sem ele, contra o fechamento anterior que a brapi usou
-  const pulo = Math.round((Date.now() - 3 * 3600 * 1000 - Date.parse(`${dia}T00:00:00Z`)) / 86400000) + 1;
+  // dias inteiros entre hoje e o dia do arquivo (pelas datas, não pelas horas: às 21h de sábado o arredondamento das
+  // horas pulava a quinta e pegava a quarta), mais 1 para começar no dia anterior ao do arquivo
+  const pulo = Math.round((Date.parse(`${agoraBR.toISOString().slice(0, 10)}T00:00:00Z`) - Date.parse(`${dia}T00:00:00Z`)) / 86400000) + 1;
   const antes = {};
   try {
     const ant = await ultimoPregao(pulo);
