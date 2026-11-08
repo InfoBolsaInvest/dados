@@ -15,6 +15,9 @@ const FEEDS = [
   ['FIIs', 'https://fiis.com.br/feed/'],
 ];
 // páginas de cotação que o Google Notícias às vezes mistura com notícia
+// seções dos portais que não são de mercado (o feed geral do InfoMoney traz esporte, saúde e carreira: apareceu o grid
+// da Fórmula 1 nas notícias do app). Vale também para o que já estava publicado
+const FORA_DO_ASSUNTO = /^https?:\/\/[^/]+\/(esportes?|saude|carreira|consumo|entretenimento|cultura|lifestyle)\//i;
 // páginas de cotação e resultado de loteria (os portais publicam no mesmo feed) não são notícia de mercado
 const NAO_E_NOTICIA = /hist[óo]rico de pre[çc]os|^cota[çc][ãa]o|cota[çc][ãa]o (hoje|em tempo real|e indicadores)|^gr[áa]fico|\b(mega-?sena|quina|lotof[áa]cil|lotomania|timemania|dupla sena|dia de sorte|super sete|\+milion[áa]ria|loteria federal)\b.*(concurso|resultado|sorteio|pr[êe]mio)/i;
 const POR_TICKER = 120; // ativos com busca própria no Google Notícias (os mais negociados)
@@ -103,7 +106,7 @@ if (ultimaBusca !== hoje) {
 const chave = (n) => n.ti.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 const porChave = new Map();
 for (const n of [...novas, ...publicadas]) {
-  if (n.d < corte || NAO_E_NOTICIA.test(n.ti)) continue;
+  if (n.d < corte || NAO_E_NOTICIA.test(n.ti) || FORA_DO_ASSUNTO.test(n.u || '')) continue;
   const k = chave(n);
   const ja = porChave.get(k);
   if (ja) { ja.t = [...new Set([...ja.t, ...n.t])]; continue; }
