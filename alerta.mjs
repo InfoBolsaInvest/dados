@@ -80,7 +80,8 @@ if (process.env.JOB_STATUS === 'failure' && !Object.values(passos).includes('fai
 // horário do pregão (10h às 18h45): rodada na mão à noite não é sinal de que o despertador falhou
 const parado = [];
 const minBrt = brt(agora).getUTCHours() * 60 + brt(agora).getUTCMinutes();
-const noHorario = minBrt >= 10 * 60 && minBrt <= 18 * 60 + 50;
+// sábado e domingo não contam: o despertador do fim de semana roda de 2 em 2 horas, só para trazer as notícias
+const noHorario = brt(agora).getUTCDay() % 6 !== 0 && minBrt >= 10 * 60 && minBrt <= 18 * 60 + 50;
 if (estado.ultima && noHorario && ['schedule', 'relogio'].includes(process.env.EVENTO)) {
   const u = new Date(estado.ultima);
   const min = Math.round((agora - u) / 60000);
