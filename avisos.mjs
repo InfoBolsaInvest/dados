@@ -281,7 +281,39 @@ async function lerDonos() {
   return new Set(r.ok ? valor({ mapValue: { fields: (await r.json()).fields || {} } }).donos || [] : []);
 }
 
+// ---------- contas que o administrador mandou apagar (painel do app, coleção apagar) ----------
+// Apaga o login e os dados. O pedido fica um dia: o acesso de quem já estava no app ainda vale por até 1 hora e pode
+// recriar a conta no banco, então no fim apaga de novo. Conta de administrador nunca. No log, só a contagem (repositório público).
+async function apagarContas() {
+  const r = await fetch(`${FS}/apagar?pageSize=50`, { headers: H });
+  if (!r.ok) { console.log(`apagar contas: não li os pedidos (${r.status})`); return; }
+  const pedidos = (await r.json()).documents || [];
+  if (!pedidos.length) return;
+  const donos = await lerDonos();
+  if (!donos.size) { console.log('apagar contas: sem a lista de administradores, não apaguei nada'); return; }
+  const dados = (uid) => Promise.all(['usuarios', 'avisos', 'carteiras'].map((c) => fetch(`${FS}/${c}/${uid}`, { method: 'DELETE', headers: H })));
+  const tirar = (nome) => fetch(`https://firestore.googleapis.com/v1/${nome}`, { method: 'DELETE', headers: H });
+  let apagadas = 0, erros = 0;
+  for (const p of pedidos) {
+    const uid = p.name.split('/').pop();
+    if (donos.has(uid)) { await tirar(p.name); continue; }
+    const feito = valor(p.fields?.feitoEm);
+    if (feito) {
+      if (agora - new Date(feito) > 24 * 3600 * 1000) { await dados(uid); await tirar(p.name); }
+      continue;
+    }
+    const a = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${PROJETO}/accounts:delete`, { method: 'POST', headers: H, body: JSON.stringify({ localId: uid }) });
+    const txt = a.ok ? '' : await a.text();
+    if (!a.ok && !/USER_NOT_FOUND/.test(txt)) { erros++; console.log(`apagar contas: o Google recusou (${a.status})`); continue; }
+    await dados(uid);
+    await fetch(`${FS}/apagar/${uid}?updateMask.fieldPaths=feitoEm`, { method: 'PATCH', headers: H, body: JSON.stringify({ fields: { feitoEm: { timestampValue: agora.toISOString() } } }) });
+    apagadas++;
+  }
+  if (apagadas || erros) console.log(`apagar contas: ${apagadas} apagada(s), ${erros} com erro`);
+}
+
 // ---------- roda ----------
+await apagarContas().catch((e) => console.log(`apagar contas: ${e.message}`));
 // o mesmo celular em duas contas (alguém saiu sem apagar o registro): vale só a conta registrada por último
 const existentes = await contas();
 const todas = existentes.filter((u) => u.push?.token);
