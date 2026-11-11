@@ -6,18 +6,39 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const SITE = 'https://infobolsainvest.github.io/dados';
 const UA = { 'User-Agent': 'Mozilla/5.0' };
+// (o de mercados do InfoMoney vinha vazio: saiu em 10/11/2026; Poder360 e IstoÉ Dinheiro não têm feed que funcione)
 const FEEDS = [
   ['InfoMoney', 'https://www.infomoney.com.br/feed/'],
-  ['InfoMoney', 'https://www.infomoney.com.br/mercados/feed/'],
   ['Money Times', 'https://www.moneytimes.com.br/feed/'],
   ['E-Investidor', 'https://einvestidor.estadao.com.br/feed/'],
   ['Suno', 'https://www.suno.com.br/noticias/feed/'],
   ['FIIs', 'https://fiis.com.br/feed/'],
+  ['G1', 'https://g1.globo.com/rss/g1/economia/'],
+  ['Folha', 'https://feeds.folha.uol.com.br/mercado/rss091.xml'],
+  ['InvestNews', 'https://investnews.com.br/feed/'],
+  ['Exame', 'https://exame.com/feed/'],
+  ['Estadão', 'https://www.estadao.com.br/arc/outboundfeeds/feeds/rss/sections/economia/'],
+  ['Seu Dinheiro', 'https://www.seudinheiro.com/feed/'],
+  ['Investing.com', 'https://br.investing.com/rss/news.rss'],
+  ['Agência Brasil', 'https://agenciabrasil.ebc.com.br/rss/economia/feed.xml'],
+  ['Brazil Journal', 'https://braziljournal.com/feed/'],
+  ['BP Money', 'https://bpmoney.com.br/feed/'],
 ];
+// Google Notícias por tema, de hora em hora: pega o que sai em portais sem feed (Valor, CNN, Bloomberg Línea...)
+const TEMAS = ['Ibovespa', 'bolsa de valores', 'mercado financeiro', 'economia brasileira', 'Selic juros', 'Copom', 'Banco Central',
+  'inflação IPCA', 'dólar câmbio', 'dividendos', 'fundos imobiliários', 'tributação investimentos', 'Wall Street', 'Tesouro Direto'];
+const POR_TEMA = 10;
 // páginas de cotação que o Google Notícias às vezes mistura com notícia
 // seções dos portais que não são de mercado (o feed geral do InfoMoney traz esporte, saúde e carreira: apareceu o grid
 // da Fórmula 1 nas notícias do app). Vale também para o que já estava publicado
-const FORA_DO_ASSUNTO = /^https?:\/\/[^/]+\/(esportes?|saude|carreira|consumo|entretenimento|cultura|lifestyle)\//i;
+const FORA_DO_ASSUNTO = /^https?:\/\/[^/]+\/(esportes?|futebol|saude|ciencia-e-saude|bem-estar|carreira|consumo|entretenimento|cultura|lifestyle|pop|pop-arte|casual|celebridades|famosos|horoscopo|receitas|viagem|turismo|games|moda|estilo)\//i;
+// pela manchete: esporte, novela, reality e afins ficam de fora, a não ser que falem de dinheiro investido
+// (ex.: o Barsi comprando parte de um time, a SAF de um clube, a ação de uma empresa de apostas)
+const ASSUNTO_FORA = /\b(futebol|campeonato|brasileir[ãa]o|libertadores|copa do mundo|gols?|escala[çc][ãa]o|t[ée]cnico do|f[óo]rmula 1|grid de largada|gp d[eo]|nba|nfl|ufc|t[êe]nis|v[ôo]lei|olimp[ií]ada|bbb|big brother|novela|reality|hor[óo]scopo|signo)\b/i;
+const DE_INVESTIMENTO = /\b(invest\w*|a[çc][õo]es|bolsa|b3|dividend\w*|ipo|saf|acionista\w*|balan[çc]o|lucro|d[íi]vida|recupera[çc][ãa]o judicial|barsi|valuation|fundo)\b/i;
+// rede social não é notícia (o Google Notícias às vezes traz post de Instagram)
+const REDE_SOCIAL = /^(instagram|facebook|youtube|tiktok|x|twitter|threads|linkedin)$/i;
+const foraDoAssunto = (n) => REDE_SOCIAL.test(n.f) || FORA_DO_ASSUNTO.test(n.u || '') || (ASSUNTO_FORA.test(n.ti) && !DE_INVESTIMENTO.test(n.ti) && !n.t.length);
 // páginas de cotação e resultado de loteria (os portais publicam no mesmo feed) não são notícia de mercado
 const NAO_E_NOTICIA = /hist[óo]rico de pre[çc]os|^cota[çc][ãa]o|cota[çc][ãa]o (hoje|em tempo real|e indicadores)|^gr[áa]fico|\b(mega-?sena|quina|lotof[áa]cil|lotomania|timemania|dupla sena|dia de sorte|super sete|\+milion[áa]ria|loteria federal)\b.*(concurso|resultado|sorteio|pr[êe]mio)/i;
 const POR_TICKER = 120; // ativos com busca própria no Google Notícias (os mais negociados)
@@ -66,15 +87,19 @@ const itens = (xml) => xml.split('<item>').slice(1);
 
 let publicadas = [];
 let ultimaBusca = '';
+let ultimaTemas = '';
 try {
   const r = await fetch(`${SITE}/noticias.json?x=${Date.now()}`);
-  if (r.ok) { const j = await r.json(); publicadas = j.n || []; ultimaBusca = j.buscaPorTicker || ''; }
+  if (r.ok) { const j = await r.json(); publicadas = j.n || []; ultimaBusca = j.buscaPorTicker || ''; ultimaTemas = j.buscaTemas || ''; }
 } catch {}
 
 const novas = [];
 for (const [fonte, url] of FEEDS) {
   try {
-    const xml = await (await fetch(url, { headers: UA })).text();
+    // a Folha manda em ISO-8859-1: lê no código que o próprio arquivo declara (senão os acentos viram "�")
+    const buf = await (await fetch(url, { headers: UA })).arrayBuffer();
+    const cod = (new TextDecoder('latin1').decode(buf.slice(0, 300)).match(/encoding=["']([\w-]+)["']/i)?.[1] || 'utf-8').toLowerCase();
+    const xml = new TextDecoder(cod === 'iso-8859-1' ? 'latin1' : cod).decode(buf);
     for (const x of itens(xml)) { const n = item(fonte, x); if (n) novas.push(n); }
   } catch (e) { console.log(`${fonte}: ${e.message}`); }
 }
@@ -102,11 +127,33 @@ if (ultimaBusca !== hoje) {
   console.log(`Google Notícias: ${n} manchetes de ${top.length} ativos`);
 }
 
+// Google Notícias por tema: de hora em hora (a chave é dia e hora de Brasília)
+const horaAgora = brt(agora).toISOString().slice(0, 13);
+if (ultimaTemas !== horaAgora) {
+  let n = 0;
+  for (const tema of TEMAS) {
+    try {
+      const xml = await (await fetch(`https://news.google.com/rss/search?q=${encodeURIComponent(tema)}+when:1d&hl=pt-BR&gl=BR&ceid=BR:pt-419`, { headers: UA })).text();
+      for (const x of itens(xml).slice(0, POR_TEMA)) {
+        const fonte = texto(x.match(/<source[^>]*>([\s\S]*?)<\/source>/)?.[1]) || 'Google Notícias';
+        const it = item(fonte, x);
+        if (!it || NAO_E_NOTICIA.test(it.ti)) continue;
+        it.ti = it.ti.replace(new RegExp(`\\s+-\\s+${fonte.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), ''); // tira " - Fonte" do fim
+        novas.push(it);
+        n++;
+      }
+    } catch {}
+    await new Promise((ok) => setTimeout(ok, 400));
+  }
+  ultimaTemas = horaAgora;
+  console.log(`Google Notícias por tema: ${n} manchetes`);
+}
+
 // junta, tira repetidas (mesma manchete) e guarda 7 dias
 const chave = (n) => n.ti.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 const porChave = new Map();
 for (const n of [...novas, ...publicadas]) {
-  if (n.d < corte || NAO_E_NOTICIA.test(n.ti) || FORA_DO_ASSUNTO.test(n.u || '')) continue;
+  if (n.d < corte || NAO_E_NOTICIA.test(n.ti) || foraDoAssunto(n)) continue;
   const k = chave(n);
   const ja = porChave.get(k);
   if (ja) { ja.t = [...new Set([...ja.t, ...n.t])]; continue; }
@@ -128,6 +175,6 @@ for (const n of ordenadas) {
   if (igual) { igual.t = [...new Set([...igual.t, ...n.t])]; continue; }
   unicas.push(n);
 }
-const lista = unicas.slice(0, 1500);
-writeFileSync('site/noticias.json', JSON.stringify({ atualizadoEm: agora.toISOString(), buscaPorTicker: ultimaBusca, n: lista }));
+const lista = unicas.slice(0, 3000); // com as fontes novas passa de 300 por dia: 3.000 cobre a semana
+writeFileSync('site/noticias.json', JSON.stringify({ atualizadoEm: agora.toISOString(), buscaPorTicker: ultimaBusca, buscaTemas: ultimaTemas, n: lista }));
 console.log(`ok: ${lista.length} notícias (${novas.length} lidas agora)`);
