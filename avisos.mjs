@@ -207,7 +207,7 @@ function avisosDe(u, ja, primeira) {
     } else {
       for (const x of ineditas) {
         const tk = x.t.find((t) => watch.includes(t));
-        add(chave(x), `${tk} nas notícias`, `${x.ti} (${x.f})`, { tk });
+        add(chave(x), `${tk} nas notícias`, `${x.ti} (${x.f})`, String(x.u || '').startsWith('https://') ? { tk, url: x.u } : { tk });
       }
     }
   }
