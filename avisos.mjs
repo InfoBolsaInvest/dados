@@ -11,6 +11,9 @@ if (!TOKEN) { console.log('sem GOOGLE_TOKEN: pulei os avisos'); process.exit(0);
 const FS = `https://firestore.googleapis.com/v1/projects/${PROJETO}/databases/(default)/documents`;
 const H = { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json' };
 const POR_RODADA = 5; // máximo de avisos por pessoa a cada 15 minutos
+const TODAS_POR_RODADA = 12; // quem ligou "Todas as notícias": até 12 por rodada, além dos outros; o resto vai num aviso só
+// hora da notícia ("14h20" do dia d, horário de Brasília) em milissegundos
+const horaNoticia = (x) => { const [hh, mm] = String(x.h || '0h0').split('h').map(Number); return Date.parse(`${x.d}T${String(hh || 0).padStart(2, '0')}:${String(mm || 0).padStart(2, '0')}:00-03:00`); };
 
 const ler = (f) => JSON.parse(readFileSync(`site/${f}`, 'utf8'));
 const cot = ler('cotacoes.json').q;
@@ -159,9 +162,35 @@ function avisosDe(u, ja, primeira) {
       }
     }
   }
+  // "Todas as notícias" (Perfil): cada notícia nova desde a última rodada vira um aviso. Guarda só até onde já avisou
+  // (todas:ate, a hora da notícia mais nova), não uma chave por notícia: são mais de 100 por dia. Na primeira vez, não
+  // manda o que já tinha. Ligada, faz o papel das "notícias dos meus ativos" (não repete a mesma notícia)
+  const todas = n.todasNoticias === true;
+  if (todas) {
+    const ate = Number(ja['todas:ate']) || 0;
+    const novas = noticias.map((x) => ({ x, t: horaNoticia(x) })).filter((o) => o.t > ate && o.t <= agora.getTime() + 60000).sort((a, b) => a.t - b.t);
+    const maior = novas.length ? novas[novas.length - 1].t : ate;
+    if (!ate || primeira) ja['todas:ate'] = maior || agora.getTime();
+    else if (novas.length) {
+      ja['todas:ate'] = maior;
+      const soltas = novas.length > TODAS_POR_RODADA ? novas.slice(-(TODAS_POR_RODADA - 1)) : novas;
+      if (soltas.length < novas.length) lista.push({ chave: '', todas: true, titulo: `${novas.length - soltas.length} notícias novas`, texto: 'Saíram muitas notícias de uma vez. Toque pra ver todas no app.', dados: { tela: 'hoje' } });
+      for (const { x } of soltas) {
+        const tk = x.t.find((t) => watch.includes(t)) || x.t[0];
+        lista.push({ chave: '', todas: true, titulo: tk ? `${tk} nas notícias` : `Notícia (${x.f})`, texto: tk ? `${x.ti} (${x.f})` : x.ti, dados: /^https:\/\//.test(x.u || '') ? { url: x.u } : { tela: 'hoje' } });
+      }
+    }
+  }
+  // principais manchetes do mercado: um aviso por dia, a partir do meio-dia, com as 3 notícias gerais mais novas do dia,
+  // de fontes diferentes
+  if ((n.manchetes === true || todas) && minutos >= 12 * 60) {
+    const fontes = new Set();
+    const tres = noticias.filter((x) => x.d === hoje && !x.t.length && !fontes.has(x.f) && fontes.add(x.f)).slice(0, 3);
+    if (tres.length >= 2) add(`manchetes:${hoje}`, 'Principais do mercado hoje', tres.map((x) => `• ${x.ti}`).join('\n'), { tela: 'hoje' });
+  }
   // notícia nova dos ativos da pessoa (na primeira vez, só da última hora; depois, das últimas 16 horas,
   // pra de manhã pegar o que saiu à noite, quando o robô não roda)
-  if (n.noticias !== false) {
+  if (n.noticias !== false && !todas) {
     const avisar = u.avisoNoticia || {};
     const limite = new Date(agora.getTime() - (primeira ? 1 : 16) * 3600 * 1000);
     const novas = noticias.filter((x) => {
@@ -389,10 +418,12 @@ for (const u of todas) {
   try {
   const antes = await enviados(u.uid);
   const ja = { ...(antes || {}) };
+  const ateAntes = ja['todas:ate'];
   const lista = avisosDe(u, ja, antes === null);
-  let mudou = antes === null;
+  let mudou = antes === null || ja['todas:ate'] !== ateAntes; // "todas as notícias" andou: guarda até onde avisou
   const chegaram = [];
-  for (const a of lista.slice(0, POR_RODADA)) {
+  // os avisos de sempre (até 5) e, para quem ligou "Todas as notícias", as notícias à parte (até 12)
+  for (const a of [...lista.filter((x) => !x.todas).slice(0, POR_RODADA), ...lista.filter((x) => x.todas)]) {
     const r = await mandar(u.push.token, a.titulo, a.texto, Object.fromEntries(Object.entries(a.dados).map(([k, v]) => [k, String(v)])));
     if (r === 'sem-endereco') { await tirarEndereco(u.uid); break; }
     if (r !== 'ok') { console.log(`aviso não foi: ${r}`); continue; }
