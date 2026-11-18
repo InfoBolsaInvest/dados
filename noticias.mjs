@@ -34,7 +34,7 @@ const POR_TEMA = 10;
 const FORA_DO_ASSUNTO = /^https?:\/\/[^/]+\/(esportes?|futebol|saude|ciencia-e-saude|bem-estar|carreira|consumo|entretenimento|cultura|lifestyle|pop|pop-arte|casual|celebridades|famosos|horoscopo|receitas|viagem|turismo|games|moda|estilo)\//i;
 // pela manchete: esporte, novela, reality e afins ficam de fora, a não ser que falem de dinheiro investido
 // (ex.: o Barsi comprando parte de um time, a SAF de um clube, a ação de uma empresa de apostas)
-const ASSUNTO_FORA = /\b(futebol|campeonato|brasileir[ãa]o|libertadores|copa do mundo|gols?|escala[çc][ãa]o|t[ée]cnico do|f[óo]rmula 1|grid de largada|gp d[eo]|nba|nfl|ufc|t[êe]nis|v[ôo]lei|olimp[ií]ada|bbb|big brother|novela|reality|hor[óo]scopo|signo|abuso (infantil|sexual)|estupro|homic[ií]dio|feminic[ií]dio|assassinat\w*|celebridades?|famos[oa]s|realeza|pr[íi]ncipe|princesa|ator|atriz|cantora?)\b/i;
+const ASSUNTO_FORA = /\b(futebol|campeonato|brasileir[ãa]o|libertadores|copa do mundo|gols?|escala[çc][ãa]o|t[ée]cnico do|f[óo]rmula 1|grid de largada|gp d[eo]|nba|nfl|ufc|t[êe]nis|v[ôo]lei|olimp[ií]ada|bbb|big brother|novela|reality|hor[óo]scopo|signo|abuso (infantil|sexual)|estupro|homic[ií]dio|feminic[ií]dio|assassinat\w*|celebridades?|famos[oa]s|realeza|pr[íi]ncipe|princesa|ator|atriz|cantora?|shows|turn[êe]|[áa]lbum|festival)\b/i;
 const DE_INVESTIMENTO = /\b(invest\w*|a[çc][õo]es|bolsa|b3|dividend\w*|ipo|saf|acionista\w*|balan[çc]o|lucro|d[íi]vida|recupera[çc][ãa]o judicial|barsi|valuation|fundo|criptomoedas?|bitcoin|ibge|desemprego|desocupad\w*|sal[áa]rios?|infla[çc][ãa]o)\b/i;
 // rede social não é notícia (o Google Notícias às vezes traz post de Instagram)
 const REDE_SOCIAL = /^(instagram|facebook|youtube|tiktok|x|twitter|threads|linkedin)$/i;
